@@ -2,5 +2,10 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/FrostyCore" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/FrostyCore/vendor/nvrhi" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/FrostyCore/vendor/nvrhi/rtxmu" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/FrostyCore/vendor/nvrhi/thirdparty/Vulkan-Headers" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/FrostyCore/vendor/sdl3" vcs="Git" />
   </component>
 </project>

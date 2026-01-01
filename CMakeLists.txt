@@ -33,3 +33,23 @@ target_sources(
         TYPE CXX_MODULES FILES
         ${INTERFACE_UNITS}
 )
+
+add_subdirectory(FrostyCore)
+
+target_link_libraries(
+        ${PROJECT_NAME}
+        PUBLIC
+        FrostyCore
+)
+
+target_compile_definitions(
+        FrostyCore
+        PUBLIC
+        "FrostyDefineMain=1"
+)
+
+target_compile_definitions(
+        ${PROJECT_NAME}
+        PUBLIC
+        "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1"
+)

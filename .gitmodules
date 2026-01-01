@@ -1,0 +1,3 @@
+[submodule "FrostyCore"]
+	path = FrostyCore
+	url = https://github.com/YiRanMushroom/FrostyCore

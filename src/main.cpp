@@ -1,18 +1,35 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <nvrhi/vulkan.h>
 #include <nvrhi/utils.h>
+#include <nvrhi/validation.h>
 #include <vector>
 #include <iostream>
 #include <windows.h>
 
 #define VK_CHECK(res) if(res != VK_SUCCESS) { std::cerr << "Vulkan Error: " << res << std::endl; exit(-1); }
 
-// Define the global dispatcher storage required by vulkan.hpp and NVRHI
-
 import Core.Prelude;
 import Core.Entrance;
+
+// Simple message callback for NVRHI
+class NvrhiMessageCallback : public nvrhi::IMessageCallback {
+public:
+    void message(nvrhi::MessageSeverity severity, const char* messageText) override {
+        const char* severityStr = "";
+        switch (severity) {
+            case nvrhi::MessageSeverity::Info: severityStr = "INFO"; break;
+            case nvrhi::MessageSeverity::Warning: severityStr = "WARNING"; break;
+            case nvrhi::MessageSeverity::Error: severityStr = "ERROR"; break;
+            case nvrhi::MessageSeverity::Fatal: severityStr = "FATAL"; break;
+        }
+        std::cerr << "[NVRHI " << severityStr << "] " << messageText << std::endl;
+    }
+};
+
+static NvrhiMessageCallback g_MessageCallback;
 
 namespace Engine {
     int Main(int argc, char **argv) {
@@ -46,49 +63,53 @@ namespace Engine {
         vk::detail::defaultDispatchLoaderDynamic.init(vkGetInstanceProcAddr);
 
         // -------------------------------------------------------------------------
-        // 3. Initialize Vulkan Instance
+        // 3. Initialize Vulkan Instance (using vulkan.hpp RAII)
         // -------------------------------------------------------------------------
         uint32_t extCount = 0;
         const char *const*extensions = SDL_Vulkan_GetInstanceExtensions(&extCount);
         std::vector<const char*> instanceExtensions(extensions, extensions + extCount);
 
-        VkApplicationInfo appInfo = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
+        vk::ApplicationInfo appInfo;
         appInfo.apiVersion = VK_API_VERSION_1_2;
 
-        VkInstanceCreateInfo instInfo = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+        vk::InstanceCreateInfo instInfo;
         instInfo.pApplicationInfo = &appInfo;
-        instInfo.enabledExtensionCount = (uint32_t) instanceExtensions.size();
+        instInfo.enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size());
         instInfo.ppEnabledExtensionNames = instanceExtensions.data();
 
-        VkInstance vkInstance;
-        VK_CHECK(vkCreateInstance(&instInfo, nullptr, &vkInstance));
+        // Create RAII context and instance
+        vk::raii::Context vkContext;
+        vk::raii::Instance vkInstance(vkContext, instInfo);
 
         // Update the dispatcher with the instance to load instance-level functions
-        vk::detail::defaultDispatchLoaderDynamic.init(vk::Instance(vkInstance));
+        vk::detail::defaultDispatchLoaderDynamic.init(*vkInstance);
 
         // -------------------------------------------------------------------------
-        // 4. Select Physical Device
+        // 4. Select Physical Device (using vulkan.hpp RAII)
         // -------------------------------------------------------------------------
-        uint32_t gpuCount = 0;
-        vkEnumeratePhysicalDevices(vkInstance, &gpuCount, nullptr);
-        std::vector<VkPhysicalDevice> gpus(gpuCount);
-        vkEnumeratePhysicalDevices(vkInstance, &gpuCount, gpus.data());
-        VkPhysicalDevice vkPhysicalDevice = gpus[0];
+        std::vector<vk::raii::PhysicalDevice> physicalDevices = vkInstance.enumeratePhysicalDevices();
+        if (physicalDevices.empty()) {
+            std::cerr << "No Vulkan-capable GPU found" << std::endl;
+            return -1;
+        }
+        vk::raii::PhysicalDevice vkPhysicalDevice = std::move(physicalDevices[0]);
 
         // -------------------------------------------------------------------------
-        // 5. Create Window Surface
+        // 5. Create Window Surface (using vulkan.hpp RAII)
         // -------------------------------------------------------------------------
-        VkSurfaceKHR vkSurface;
-        if (!SDL_Vulkan_CreateSurface(window, vkInstance, nullptr, &vkSurface)) {
+        VkSurfaceKHR rawSurface;
+        if (!SDL_Vulkan_CreateSurface(window, *vkInstance, nullptr, &rawSurface)) {
             std::cerr << "Failed to create Vulkan surface" << std::endl;
             return -1;
         }
+        // Wrap the raw surface in RAII handle
+        vk::raii::SurfaceKHR vkSurface(vkInstance, rawSurface);
 
         // -------------------------------------------------------------------------
-        // 6. Create Logical Device
+        // 6. Create Logical Device (using vulkan.hpp RAII)
         // -------------------------------------------------------------------------
         float queuePriority = 1.0f;
-        VkDeviceQueueCreateInfo queueInfo = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+        vk::DeviceQueueCreateInfo queueInfo;
         queueInfo.queueFamilyIndex = 0;
         queueInfo.queueCount = 1;
         queueInfo.pQueuePriorities = &queuePriority;
@@ -97,101 +118,110 @@ namespace Engine {
             VK_KHR_SWAPCHAIN_EXTENSION_NAME
         };
 
-        VkPhysicalDeviceVulkan12Features features12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+        vk::PhysicalDeviceVulkan12Features features12;
         features12.descriptorIndexing = VK_TRUE;
         features12.bufferDeviceAddress = VK_TRUE;
         features12.runtimeDescriptorArray = VK_TRUE;
         features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
         features12.descriptorBindingPartiallyBound = VK_TRUE;
 
-        VkDeviceCreateInfo devInfo = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+        vk::DeviceCreateInfo devInfo;
         devInfo.pNext = &features12;
         devInfo.queueCreateInfoCount = 1;
         devInfo.pQueueCreateInfos = &queueInfo;
         devInfo.enabledExtensionCount = 1;
         devInfo.ppEnabledExtensionNames = deviceExtensions;
 
-        VkDevice vkDevice;
-        VK_CHECK(vkCreateDevice(vkPhysicalDevice, &devInfo, nullptr, &vkDevice));
+        vk::raii::Device vkDevice(vkPhysicalDevice, devInfo);
 
         // FINAL STEP: Initialize the dispatcher with the logical device
         // This loads device-level functions like vkCreateSemaphore
-        vk::detail::defaultDispatchLoaderDynamic.init(vk::Instance(vkInstance), vk::Device(vkDevice));
+        vk::detail::defaultDispatchLoaderDynamic.init(*vkInstance, *vkDevice);
 
-        VkQueue vkQueue;
-        vkGetDeviceQueue(vkDevice, 0, 0, &vkQueue);
+        vk::raii::Queue vkQueue(vkDevice, 0, 0);
 
         // -------------------------------------------------------------------------
         // 7. Initialize NVRHI Device Wrapper
         // -------------------------------------------------------------------------
         nvrhi::vulkan::DeviceDesc nvrhiDesc;
-        nvrhiDesc.instance = vkInstance;
-        nvrhiDesc.physicalDevice = vkPhysicalDevice;
-        nvrhiDesc.device = vkDevice;
-        nvrhiDesc.graphicsQueue = vkQueue;
+        nvrhiDesc.errorCB = &g_MessageCallback;
+        nvrhiDesc.instance = *vkInstance;           // Dereference RAII handle
+        nvrhiDesc.physicalDevice = *vkPhysicalDevice; // Dereference RAII handle
+        nvrhiDesc.device = *vkDevice;               // Dereference RAII handle
+        nvrhiDesc.graphicsQueue = *vkQueue;         // Dereference RAII handle
         nvrhiDesc.graphicsQueueIndex = 0;
         nvrhiDesc.deviceExtensions = deviceExtensions;
         nvrhiDesc.numDeviceExtensions = 1;
 
         nvrhi::DeviceHandle nvrhiDevice = nvrhi::vulkan::createDevice(nvrhiDesc);
 
+        // Optional: Wrap with validation layer for debugging
+        constexpr bool enableValidation = true;
+        if (enableValidation) {
+            nvrhi::DeviceHandle nvrhiValidationLayer = nvrhi::validation::createValidationLayer(nvrhiDevice);
+            nvrhiDevice = nvrhiValidationLayer;
+        }
+
         // -------------------------------------------------------------------------
-        // 8. Manual Vulkan Swapchain Creation
+        // 8. Manual Vulkan Swapchain Creation (using vulkan.hpp RAII)
         // -------------------------------------------------------------------------
         int width, height;
         SDL_GetWindowSizeInPixels(window, &width, &height);
 
-        VkSurfaceCapabilitiesKHR caps;
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vkPhysicalDevice, vkSurface, &caps);
+        vk::SurfaceCapabilitiesKHR caps = vkPhysicalDevice.getSurfaceCapabilitiesKHR(*vkSurface);
 
-        VkSwapchainCreateInfoKHR swapchainInfo = {VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
-        swapchainInfo.surface = vkSurface;
+        vk::SwapchainCreateInfoKHR swapchainInfo;
+        swapchainInfo.surface = *vkSurface;
         swapchainInfo.minImageCount = 2;
-        swapchainInfo.imageFormat = VK_FORMAT_B8G8R8A8_UNORM;
-        swapchainInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-        swapchainInfo.imageExtent = {(uint32_t) width, (uint32_t) height};
+        swapchainInfo.imageFormat = vk::Format::eB8G8R8A8Unorm;
+        swapchainInfo.imageColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear;
+        swapchainInfo.imageExtent = vk::Extent2D(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
         swapchainInfo.imageArrayLayers = 1;
-        swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        swapchainInfo.imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst;
         swapchainInfo.preTransform = caps.currentTransform;
-        swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        swapchainInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+        swapchainInfo.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
+        swapchainInfo.presentMode = vk::PresentModeKHR::eFifo;
         swapchainInfo.clipped = VK_TRUE;
-        swapchainInfo.oldSwapchain = VK_NULL_HANDLE;
+        swapchainInfo.oldSwapchain = nullptr;
 
-        VkSwapchainKHR vkSwapchain;
-        VK_CHECK(vkCreateSwapchainKHR(vkDevice, &swapchainInfo, nullptr, &vkSwapchain));
+        vk::raii::SwapchainKHR vkSwapchain(vkDevice, swapchainInfo);
 
-        uint32_t imageCount;
-        vkGetSwapchainImagesKHR(vkDevice, vkSwapchain, &imageCount, nullptr);
-        std::vector<VkImage> swapchainImages(imageCount);
-        vkGetSwapchainImagesKHR(vkDevice, vkSwapchain, &imageCount, swapchainImages.data());
+        std::vector<vk::Image> swapchainImages = vkSwapchain.getImages();
 
         // -------------------------------------------------------------------------
-        // 9. Wrap Native Images into NVRHI Texture Handles
+        // 9. Wrap Native Images into NVRHI Texture Handles and Create Framebuffers
         // -------------------------------------------------------------------------
         std::vector<nvrhi::TextureHandle> nvrhiBackBuffers;
-        for (auto img: swapchainImages) {
-            nvrhi::TextureDesc textureDesc;
-            textureDesc.dimension = nvrhi::TextureDimension::Texture2D;
-            textureDesc.format = nvrhi::Format::SBGRA8_UNORM;
-            textureDesc.width = width;
-            textureDesc.height = height;
-            textureDesc.isRenderTarget = true;
-            textureDesc.debugName = "BackBuffer";
-            textureDesc.initialState = nvrhi::ResourceStates::Present;
-            textureDesc.keepInitialState = true;
+        std::vector<nvrhi::FramebufferHandle> nvrhiFramebuffers;
+
+        for (const auto& img: swapchainImages) {
+            // Use the builder pattern as shown in the tutorial
+            auto textureDesc = nvrhi::TextureDesc()
+                .setDimension(nvrhi::TextureDimension::Texture2D)
+                .setFormat(nvrhi::Format::BGRA8_UNORM)
+                .setWidth(width)
+                .setHeight(height)
+                .setIsRenderTarget(true)
+                .setDebugName("BackBuffer")
+                .setInitialState(nvrhi::ResourceStates::Present)
+                .setKeepInitialState(true);
 
             nvrhi::TextureHandle handle = nvrhiDevice->createHandleForNativeTexture(
                 nvrhi::ObjectTypes::VK_Image,
-                nvrhi::Object(img),
+                nvrhi::Object(static_cast<VkImage>(img)),  // Cast vk::Image to VkImage
                 textureDesc
             );
             nvrhiBackBuffers.push_back(handle);
+
+            // Create a framebuffer for this swapchain image (as per tutorial)
+            auto framebufferDesc = nvrhi::FramebufferDesc()
+                .addColorAttachment(handle);
+            nvrhi::FramebufferHandle framebuffer = nvrhiDevice->createFramebuffer(framebufferDesc);
+            nvrhiFramebuffers.push_back(framebuffer);
         }
 
-        VkSemaphore acquireSemaphore;
-        VkSemaphoreCreateInfo semaphoreInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-        VK_CHECK(vkCreateSemaphore(vkDevice, &semaphoreInfo, nullptr, &acquireSemaphore));
+        vk::SemaphoreCreateInfo semaphoreInfo;
+        vk::raii::Semaphore acquireSemaphore(vkDevice, semaphoreInfo);
 
         nvrhi::CommandListHandle commandList = nvrhiDevice->createCommandList();
 
@@ -206,46 +236,47 @@ namespace Engine {
             }
 
             uint32_t imageIndex;
-            VkResult res = vkAcquireNextImageKHR(vkDevice, vkSwapchain, UINT64_MAX, acquireSemaphore, VK_NULL_HANDLE,
+            VkResult res = vkAcquireNextImageKHR(*vkDevice, *vkSwapchain, UINT64_MAX, *acquireSemaphore, VK_NULL_HANDLE,
                                                  &imageIndex);
             if (res != VK_SUCCESS) continue;
 
             commandList->open();
 
-            nvrhi::TextureHandle currentBackBuffer = nvrhiBackBuffers[imageIndex];
+            // Get the current framebuffer for this swapchain image
+            const nvrhi::FramebufferHandle& currentFramebuffer = nvrhiFramebuffers[imageIndex];
 
-            nvrhi::Color purple = {1.0f, 0.0f, 1.0f, 1.0f};
-            auto desc = currentBackBuffer->getDesc();
-            commandList->clearTextureFloat(currentBackBuffer,
-                                           nvrhi::TextureSubresourceSet(0, desc.mipLevels, 0, desc.arraySize), purple);
+            // Clear the primary render target using NVRHI utility function (as per tutorial)
+            nvrhi::Color purple(1.0f, 0.0f, 1.0f, 1.0f);
+            nvrhi::utils::ClearColorAttachment(commandList, currentFramebuffer, 0, purple);
 
             commandList->close();
             nvrhiDevice->executeCommandList(commandList);
 
-            vkQueueWaitIdle(vkQueue);
+            vkQueueWaitIdle(*vkQueue);
 
+            VkSwapchainKHR rawSwapchain = *vkSwapchain;
             VkPresentInfoKHR presentInfo = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
             presentInfo.swapchainCount = 1;
-            presentInfo.pSwapchains = &vkSwapchain;
+            presentInfo.pSwapchains = &rawSwapchain;
             presentInfo.pImageIndices = &imageIndex;
 
-            vkQueuePresentKHR(vkQueue, &presentInfo);
+            vkQueuePresentKHR(*vkQueue, &presentInfo);
         }
 
         // -------------------------------------------------------------------------
         // 11. Cleanup
         // -------------------------------------------------------------------------
-        vkDeviceWaitIdle(vkDevice);
+        vkDeviceWaitIdle(*vkDevice);
 
+        // Clear NVRHI resources first (before destroying Vulkan objects)
+        nvrhiFramebuffers.clear();
         nvrhiBackBuffers.clear();
         commandList = nullptr;
         nvrhiDevice = nullptr;
 
-        vkDestroySemaphore(vkDevice, acquireSemaphore, nullptr);
-        vkDestroySwapchainKHR(vkDevice, vkSwapchain, nullptr);
-        vkDestroySurfaceKHR(vkInstance, vkSurface, nullptr);
-        vkDestroyDevice(vkDevice, nullptr);
-        vkDestroyInstance(vkInstance, nullptr);
+        // Note: All RAII handles (vkSwapchain, vkSurface, vkDevice, vkInstance, etc.)
+        // will be automatically destroyed when they go out of scope
+        // No manual vkDestroy* calls needed!
 
         SDL_DestroyWindow(window);
         SDL_Quit();

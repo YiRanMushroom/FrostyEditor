@@ -45,7 +45,6 @@ SwapChainData CreateSwapchain(
     const nvrhi::DeviceHandle &nvrhiDevice,
     vk::SwapchainKHR oldSwapchain = nullptr
 ) {
-
     SwapChainData result;
 
     // Get current window size
@@ -222,29 +221,46 @@ Engine {
         nvrhiDesc.deviceExtensions = deviceExtensions;
         nvrhiDesc.numDeviceExtensions = 1;
 
-        nvrhi::DeviceHandle nvrhiDevice = nvrhi::vulkan::createDevice(nvrhiDesc);
+        nvrhi::vulkan::DeviceHandle nvrhiDevice = nvrhi::vulkan::createDevice(nvrhiDesc);
+        nvrhi::DeviceHandle nvrhiValidationLayer;
 
         constexpr bool enableValidation = true;
         if (enableValidation) {
-            nvrhi::DeviceHandle nvrhiValidationLayer = nvrhi::validation::createValidationLayer(nvrhiDevice);
-            nvrhiDevice = nvrhiValidationLayer;
+            nvrhiValidationLayer = nvrhi::validation::createValidationLayer(nvrhiDevice);
         }
 
         // -------------------------------------------------------------------------
-        // 8. Create Swapchain and Synchronization
+        // 8. Create Swapchain and Synchronization (Triple Buffering)
         // -------------------------------------------------------------------------
 
         SwapChainData swapchainData = CreateSwapchain(window, vkDevice, vkPhysicalDevice, vkSurface, nvrhiDevice);
 
-        // Create semaphore for swapchain image acquisition
-        vk::SemaphoreCreateInfo semaphoreInfo;
-        vk::Semaphore semaphore = vkDevice.get().createSemaphore(semaphoreInfo);
-        vk::SharedHandle<vk::Semaphore> acquireSemaphore(semaphore, vkDevice);
+        // Triple buffering: create 3 sets of synchronization objects
+        constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;
 
-        // Create NVRHI EventQuery for CPU-GPU synchronization (used for swapchain rebuild)
-        nvrhi::EventQueryHandle renderCompleteEvent = nvrhiDevice->createEventQuery();
+        // Semaphores for each frame - signaled when swapchain image is acquired
+        std::array<vk::SharedHandle<vk::Semaphore>, MAX_FRAMES_IN_FLIGHT> acquireSemaphores;
+
+        // Semaphores for each frame - signaled when rendering is complete
+        std::array<vk::SharedHandle<vk::Semaphore>, MAX_FRAMES_IN_FLIGHT> renderCompleteSemaphores;
+
+        // EventQueries for CPU-GPU synchronization (used for swapchain rebuild)
+        std::array<nvrhi::EventQueryHandle, MAX_FRAMES_IN_FLIGHT> renderCompleteEvents;
+
+        vk::SemaphoreCreateInfo semaphoreInfo;
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            vk::Semaphore acquireSem = vkDevice.get().createSemaphore(semaphoreInfo);
+            acquireSemaphores[i] = vk::SharedHandle<vk::Semaphore>(acquireSem, vkDevice);
+
+            vk::Semaphore renderSem = vkDevice.get().createSemaphore(semaphoreInfo);
+            renderCompleteSemaphores[i] = vk::SharedHandle<vk::Semaphore>(renderSem, vkDevice);
+
+            renderCompleteEvents[i] = nvrhiDevice->createEventQuery();
+        }
 
         nvrhi::CommandListHandle commandList = nvrhiDevice->createCommandList();
+
+        uint32_t currentFrame = 0;
 
         // -------------------------------------------------------------------------
         // 9. Main Loop
@@ -266,26 +282,40 @@ Engine {
 
             // Handle swapchain recreation if window was resized
             if (needsResize) {
+                // Wait for all in-flight frames to complete before recreating swapchain
+                for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+                    nvrhiDevice->waitEventQuery(renderCompleteEvents[i]);
+                }
+
                 // Store old swapchain for recreation
                 vk::SwapchainKHR oldSwapchain = swapchainData.swapchain ? swapchainData.swapchain.get() : nullptr;
-
-                // Wait for GPU to finish using swapchain resources using NVRHI EventQuery
-                // This ensures the swapchain is no longer in use before recreating it
-                nvrhiDevice->waitEventQuery(renderCompleteEvent);
 
                 // Recreate swapchain
                 swapchainData = CreateSwapchain(window, vkDevice, vkPhysicalDevice, vkSurface, nvrhiDevice,
                                                 oldSwapchain);
 
                 needsResize = false;
+                currentFrame = 0; // Reset frame counter after swapchain rebuild
                 continue;
             }
 
+            // Get synchronization objects for current frame
+            vk::SharedHandle<vk::Semaphore> &currentAcquireSemaphore = acquireSemaphores[currentFrame];
+            vk::SharedHandle<vk::Semaphore> &currentRenderCompleteSemaphore = renderCompleteSemaphores[currentFrame];
+            nvrhi::EventQueryHandle &currentRenderCompleteEvent = renderCompleteEvents[currentFrame];
+
+            // Wait for this frame's previous work to complete (ensures we don't overwrite in-use resources)
+            nvrhiDevice->waitEventQuery(currentRenderCompleteEvent);
+
+            // Acquire next swapchain image
             uint32_t imageIndex;
-            vk::Result res = vkDevice->acquireNextImageKHR(swapchainData.swapchain.get(), UINT64_MAX,
-                                                           acquireSemaphore.get(),
-                                                           nullptr,
-                                                           &imageIndex);
+            vk::Result res = vkDevice.get().acquireNextImageKHR(
+                swapchainData.swapchain.get(),
+                UINT64_MAX,
+                currentAcquireSemaphore.get(), // Signal when image is ready
+                nullptr,
+                &imageIndex
+            );
 
             if (res == vk::Result::eErrorOutOfDateKHR || res == vk::Result::eSuboptimalKHR) {
                 needsResize = true;
@@ -305,51 +335,37 @@ Engine {
 
             commandList->close();
 
-            // Execute the command list
+            nvrhiDevice->queueSignalSemaphore(nvrhi::CommandQueue::Graphics, currentAcquireSemaphore.get(), 0);
             nvrhiDevice->executeCommandList(commandList);
 
-            // Reset and set EventQuery to track when rendering completes
-            // Reset is required to clear the previous frame's commandListID (avoids assertion failure)
-            nvrhiDevice->resetEventQuery(renderCompleteEvent);
-            nvrhiDevice->setEventQuery(renderCompleteEvent, nvrhi::CommandQueue::Graphics);
+            // Reset and set EventQuery to track when this frame's rendering completes
+            nvrhiDevice->resetEventQuery(currentRenderCompleteEvent);
+            nvrhiDevice->setEventQuery(currentRenderCompleteEvent, nvrhi::CommandQueue::Graphics);
 
             // Present the rendered image
-            // We wait on acquireSemaphore to ensure the image is ready for presentation
+            // Wait on renderCompleteSemaphore to ensure rendering is done before present
             const vk::SwapchainKHR rawSwapchain = swapchainData.swapchain.get();
             vk::PresentInfoKHR presentInfo{};
             presentInfo.waitSemaphoreCount = 1;
-            vk::Semaphore waitSemaphores[] = {acquireSemaphore.get()};
+            vk::Semaphore waitSemaphores[] = {currentRenderCompleteSemaphore.get()};
             presentInfo.pWaitSemaphores = waitSemaphores;
             presentInfo.swapchainCount = 1;
             presentInfo.pSwapchains = &rawSwapchain;
             presentInfo.pImageIndices = &imageIndex;
 
-            res = vkQueue->presentKHR(presentInfo);
+            res = vkQueue.get().presentKHR(presentInfo);
             if (res == vk::Result::eErrorOutOfDateKHR || res == vk::Result::eSuboptimalKHR) {
                 needsResize = true;
             }
+
+            // Move to next frame
+            currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
         }
 
         // -------------------------------------------------------------------------
         // 10. Cleanup
         // -------------------------------------------------------------------------
         vkDevice->waitIdle();
-
-        // Clear NVRHI resources first
-        swapchainData.framebuffers.clear();
-        swapchainData.backBuffers.clear();
-        swapchainData.swapchainImages.clear();
-        swapchainData.swapchain.reset();
-        commandList = nullptr;
-        nvrhiDevice = nullptr;
-
-        // Shared handles will automatically clean up
-        acquireSemaphore.reset();
-        vkQueue.reset();
-        vkDevice.reset();
-        vkSurface.reset();
-        vkPhysicalDevice.reset();
-        vkInstance.reset();
 
         SDL_DestroyWindow(window);
 

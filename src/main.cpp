@@ -1,9 +1,6 @@
-#define VK_CHECK(res) if(res != VK_SUCCESS) { std::cerr << "Vulkan Error: " << res << std::endl; exit(-1); }
-
 import Core.Prelude;
 import Core.Entrance;
 import Vendor.ApplicationAPI;
-
 import "SDL3/SDL.h";
 
 // Simple message callback for NVRHI
@@ -44,24 +41,25 @@ public:
     }
 
     // Non-copyable
-    Application(const Application&) = delete;
-    Application& operator=(const Application&) = delete;
+    Application(const Application &) = delete;
+
+    Application &operator=(const Application &) = delete;
 
     // Getter methods
-    SDL_Window* GetWindow() const { return m_Window; }
+    [[nodiscard]] const std::shared_ptr<SDL_Window> &GetWindow() const { return m_Window; }
 
-    const vk::SharedInstance& GetVkInstance() const { return m_VkInstance; }
-    const vk::SharedPhysicalDevice& GetVkPhysicalDevice() const { return m_VkPhysicalDevice; }
-    const vk::SharedSurfaceKHR& GetVkSurface() const { return m_VkSurface; }
-    const vk::SharedDevice& GetVkDevice() const { return m_VkDevice; }
-    const vk::SharedQueue& GetVkQueue() const { return m_VkQueue; }
+    [[nodiscard]] const vk::SharedInstance &GetVkInstance() const { return m_VkInstance; }
+    [[nodiscard]] const vk::SharedPhysicalDevice &GetVkPhysicalDevice() const { return m_VkPhysicalDevice; }
+    [[nodiscard]] const vk::SharedSurfaceKHR &GetVkSurface() const { return m_VkSurface; }
+    [[nodiscard]] const vk::SharedDevice &GetVkDevice() const { return m_VkDevice; }
+    [[nodiscard]] const vk::SharedQueue &GetVkQueue() const { return m_VkQueue; }
 
-    const nvrhi::DeviceHandle& GetNvrhiDevice() const { return m_NvrhiDevice; }
-    const nvrhi::CommandListHandle& GetCommandList() const { return m_CommandList; }
+    [[nodiscard]] const nvrhi::DeviceHandle &GetNvrhiDevice() const { return m_NvrhiDevice; }
+    [[nodiscard]] const nvrhi::CommandListHandle &GetCommandList() const { return m_CommandList; }
 
-    const SwapChainData& GetSwapchainData() const { return m_SwapchainData; }
+    [[nodiscard]] const SwapChainData &GetSwapchainData() const { return m_SwapchainData; }
 
-    bool IsRunning() const { return m_Running; }
+    [[nodiscard]] bool IsRunning() const { return m_Running; }
 
     bool Init() {
         if (!CreateWindow()) return false;
@@ -118,29 +116,31 @@ public:
         m_NvrhiDevice = nullptr;
 
         // 4. Clear Vulkan synchronization objects
-        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            m_AcquireSemaphores[i] = vk::SharedHandle<vk::Semaphore>{};
-            m_RenderCompleteSemaphores[i] = vk::SharedHandle<vk::Semaphore>{};
+        m_AcquireSemaphores.clear();
+        m_RenderCompleteSemaphores.clear();
+
+        // 5. Destroy debug messenger
+        if (m_DebugMessenger) {
+            m_VkInstance.get().destroyDebugUtilsMessengerEXT(m_DebugMessenger);
+            m_DebugMessenger = nullptr;
         }
 
-        // 5. Clear Vulkan objects (in reverse order of creation)
-        m_VkQueue = vk::SharedQueue{};
-        m_VkDevice = vk::SharedDevice{};
-        m_VkSurface = vk::SharedSurfaceKHR{};
-        m_VkPhysicalDevice = vk::SharedPhysicalDevice{};
-        m_VkInstance = vk::SharedInstance{};
+        // 6. Clear Vulkan objects (in reverse order of creation)
+        m_VkQueue.reset();
+        m_VkDevice.reset();
+        m_VkSurface.reset();
+        m_VkPhysicalDevice.reset();
+        m_VkInstance.reset();
 
-        // 6. Destroy window last
-        if (m_Window) {
-            SDL_DestroyWindow(m_Window);
-            m_Window = nullptr;
-        }
+        // 7. Destroy window last
+        m_Window.reset();
     }
 
 private:
     bool CreateWindow() {
-        m_Window = SDL_CreateWindow("NVRHI Vulkan Application", 1280, 720,
-                                    SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+        m_Window = std::shared_ptr<SDL_Window>(SDL_CreateWindow("NVRHI Vulkan Application", 1280, 720,
+                                                                SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE),
+                                               SDL_DestroyWindow);
         if (!m_Window) {
             std::cerr << "Failed to create window: " << SDL_GetError() << std::endl;
             return false;
@@ -162,13 +162,17 @@ private:
 
     bool CreateVulkanInstance() {
         uint32_t extCount = 0;
-        const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extCount);
-        std::vector<const char*> instanceExtensions(extensions, extensions + extCount);
+        const char *const*extensions = SDL_Vulkan_GetInstanceExtensions(&extCount);
+        std::vector<const char *> instanceExtensions(extensions, extensions + extCount);
 
         // Enable Vulkan validation layers
-        const char* validationLayers[] = {
+        const char *validationLayers[] = {
             "VK_LAYER_KHRONOS_validation"
         };
+
+        // Add debug utils extension for validation messages
+        instanceExtensions.push_back(vk::EXTDebugUtilsExtensionName);
+
         constexpr bool enableValidation = true;
 
         vk::ApplicationInfo appInfo;
@@ -188,8 +192,47 @@ private:
         m_VkInstance = vk::SharedInstance(instance);
         vk::detail::defaultDispatchLoaderDynamic.init(m_VkInstance.get());
 
+        // Setup debug messenger to output errors to stderr
+        if (enableValidation) {
+            SetupDebugMessenger();
+        }
+
         return true;
     }
+
+    void SetupDebugMessenger() {
+        vk::DebugUtilsMessengerCreateInfoEXT createInfo;
+        createInfo.messageSeverity =
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning;
+        createInfo.messageType =
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
+        createInfo.pfnUserCallback = reinterpret_cast<vk::PFN_DebugUtilsMessengerCallbackEXT>(
+            reinterpret_cast<void *>(DebugCallback));
+
+        m_DebugMessenger = m_VkInstance.get().createDebugUtilsMessengerEXT(createInfo);
+    }
+
+    static vk::Bool32 DebugCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageType,
+        const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+        void *pUserData) {
+        // Output to stderr for errors and warnings
+        if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+            std::cerr << "Validation Error: " << pCallbackData->pMessage << std::endl;
+#ifdef _DEBUG
+            __debugbreak();
+#endif
+        } else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+            std::cerr << "Validation Warning: " << pCallbackData->pMessage << std::endl;
+        }
+
+        return vk::False;
+    }
+
 
     bool SelectPhysicalDevice() {
         std::vector<vk::PhysicalDevice> physicalDevices = m_VkInstance.get().enumeratePhysicalDevices();
@@ -203,7 +246,7 @@ private:
 
     bool CreateSurface() {
         VkSurfaceKHR rawSurface;
-        if (!SDL_Vulkan_CreateSurface(m_Window, m_VkInstance.get(), nullptr, &rawSurface)) {
+        if (!SDL_Vulkan_CreateSurface(m_Window.get(), m_VkInstance.get(), nullptr, &rawSurface)) {
             std::cerr << "Failed to create Vulkan surface" << std::endl;
             return false;
         }
@@ -218,7 +261,7 @@ private:
         queueInfo.queueCount = 1;
         queueInfo.pQueuePriorities = &queuePriority;
 
-        const char* deviceExtensions[] = {vk::KHRSwapchainExtensionName};
+        const char *deviceExtensions[] = {vk::KHRSwapchainExtensionName};
 
         vk::PhysicalDeviceVulkan12Features features12;
         features12.descriptorIndexing = vk::True;
@@ -226,6 +269,7 @@ private:
         features12.runtimeDescriptorArray = vk::True;
         features12.shaderSampledImageArrayNonUniformIndexing = vk::True;
         features12.descriptorBindingPartiallyBound = vk::True;
+        features12.timelineSemaphore = vk::True; // Enable timeline semaphore for NVRHI
 
         vk::DeviceCreateInfo devInfo;
         devInfo.pNext = &features12;
@@ -247,7 +291,7 @@ private:
     bool InitNVRHI() {
         m_MessageCallback = std::make_shared<NvrhiMessageCallback>();
 
-        const char* deviceExtensions[] = {vk::KHRSwapchainExtensionName};
+        const char *deviceExtensions[] = {vk::KHRSwapchainExtensionName};
 
         nvrhi::vulkan::DeviceDesc nvrhiDesc;
         nvrhiDesc.errorCB = m_MessageCallback.get();
@@ -266,18 +310,29 @@ private:
 
     bool CreateSwapchain() {
         m_SwapchainData = CreateSwapchainInternal();
-        return true;
-    }
 
-    bool CreateSyncObjects() {
+        // Create acquire semaphores per frame in flight
+        m_AcquireSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         vk::SemaphoreCreateInfo semaphoreInfo;
         for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
             vk::Semaphore acquireSem = m_VkDevice.get().createSemaphore(semaphoreInfo);
             m_AcquireSemaphores[i] = vk::SharedHandle<vk::Semaphore>(acquireSem, m_VkDevice);
+        }
 
+        // Create render complete semaphores per swapchain image
+        const uint32_t imageCount = static_cast<uint32_t>(m_SwapchainData.backBuffers.size());
+        m_RenderCompleteSemaphores.resize(imageCount);
+        for (uint32_t i = 0; i < imageCount; ++i) {
             vk::Semaphore renderSem = m_VkDevice.get().createSemaphore(semaphoreInfo);
             m_RenderCompleteSemaphores[i] = vk::SharedHandle<vk::Semaphore>(renderSem, m_VkDevice);
+        }
 
+        return true;
+    }
+
+    bool CreateSyncObjects() {
+        // Create EventQueries for frame synchronization
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
             m_RenderCompleteEvents[i] = m_NvrhiDevice->createEventQuery();
         }
         return true;
@@ -289,15 +344,36 @@ private:
             m_NvrhiDevice->waitEventQuery(m_RenderCompleteEvents[i]);
         }
 
+        // Clear old semaphores
+        m_AcquireSemaphores.clear();
+        m_RenderCompleteSemaphores.clear();
+
         vk::SwapchainKHR oldSwapchain = m_SwapchainData.swapchain ? m_SwapchainData.swapchain.get() : nullptr;
         m_SwapchainData = CreateSwapchainInternal(oldSwapchain);
+
+        // Recreate acquire semaphores per frame in flight
+        m_AcquireSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        vk::SemaphoreCreateInfo semaphoreInfo;
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            vk::Semaphore acquireSem = m_VkDevice.get().createSemaphore(semaphoreInfo);
+            m_AcquireSemaphores[i] = vk::SharedHandle<vk::Semaphore>(acquireSem, m_VkDevice);
+        }
+
+        // Recreate render complete semaphores per swapchain image
+        const uint32_t imageCount = static_cast<uint32_t>(m_SwapchainData.backBuffers.size());
+        m_RenderCompleteSemaphores.resize(imageCount);
+        for (uint32_t i = 0; i < imageCount; ++i) {
+
+            vk::Semaphore renderSem = m_VkDevice.get().createSemaphore(semaphoreInfo);
+            m_RenderCompleteSemaphores[i] = vk::SharedHandle<vk::Semaphore>(renderSem, m_VkDevice);
+        }
     }
 
     SwapChainData CreateSwapchainInternal(vk::SwapchainKHR oldSwapchain = nullptr) {
         SwapChainData result;
 
         int width, height;
-        SDL_GetWindowSizeInPixels(m_Window, &width, &height);
+        SDL_GetWindowSizeInPixels(m_Window.get(), &width, &height);
         result.width = static_cast<uint32_t>(width);
         result.height = static_cast<uint32_t>(height);
 
@@ -322,19 +398,19 @@ private:
 
         std::vector<vk::Image> rawImages = m_VkDevice.get().getSwapchainImagesKHR(swapchain);
 
-        for (const auto& img : rawImages) {
+        for (const auto &img: rawImages) {
             vk::SharedImage sharedImg(img, m_VkDevice, vk::SwapchainOwns::yes);
             result.swapchainImages.push_back(sharedImg);
 
             auto textureDesc = nvrhi::TextureDesc()
-                .setDimension(nvrhi::TextureDimension::Texture2D)
-                .setFormat(nvrhi::Format::BGRA8_UNORM)
-                .setWidth(result.width)
-                .setHeight(result.height)
-                .setIsRenderTarget(true)
-                .setDebugName("BackBuffer")
-                .setInitialState(nvrhi::ResourceStates::Present)
-                .setKeepInitialState(true);
+                    .setDimension(nvrhi::TextureDimension::Texture2D)
+                    .setFormat(nvrhi::Format::BGRA8_UNORM)
+                    .setWidth(result.width)
+                    .setHeight(result.height)
+                    .setIsRenderTarget(true)
+                    .setDebugName("BackBuffer")
+                    .setInitialState(nvrhi::ResourceStates::Present)
+                    .setKeepInitialState(true);
 
             nvrhi::TextureHandle handle = m_NvrhiDevice->createHandleForNativeTexture(
                 nvrhi::ObjectTypes::VK_Image,
@@ -367,19 +443,20 @@ private:
     }
 
     void RenderFrame() {
-        vk::SharedHandle<vk::Semaphore>& currentAcquireSemaphore = m_AcquireSemaphores[m_CurrentFrame];
-        vk::SharedHandle<vk::Semaphore>& currentRenderCompleteSemaphore = m_RenderCompleteSemaphores[m_CurrentFrame];
-        nvrhi::EventQueryHandle& currentRenderCompleteEvent = m_RenderCompleteEvents[m_CurrentFrame];
+        nvrhi::EventQueryHandle &currentRenderCompleteEvent = m_RenderCompleteEvents[m_CurrentFrame];
 
         // Wait for this frame's previous work to complete
         m_NvrhiDevice->waitEventQuery(currentRenderCompleteEvent);
+
+        // Use per-frame acquire semaphore
+        vk::SharedHandle<vk::Semaphore> &frameAcquireSemaphore = m_AcquireSemaphores[m_CurrentFrame];
 
         // Acquire next swapchain image
         uint32_t imageIndex;
         vk::Result res = m_VkDevice.get().acquireNextImageKHR(
             m_SwapchainData.swapchain.get(),
             UINT64_MAX,
-            currentAcquireSemaphore.get(),
+            frameAcquireSemaphore.get(),
             nullptr,
             &imageIndex
         );
@@ -391,17 +468,21 @@ private:
 
         if (res != vk::Result::eSuccess) return;
 
+        // Use per-image render complete semaphore
+        vk::SharedHandle<vk::Semaphore> &imageRenderCompleteSemaphore = m_RenderCompleteSemaphores[imageIndex];
+
         m_CommandList->open();
 
-        const nvrhi::FramebufferHandle& currentFramebuffer = m_SwapchainData.framebuffers[imageIndex];
+        const nvrhi::FramebufferHandle &currentFramebuffer = m_SwapchainData.framebuffers[imageIndex];
         nvrhi::Color purple(1.0f, 0.0f, 1.0f, 1.0f);
         nvrhi::utils::ClearColorAttachment(m_CommandList, currentFramebuffer, 0, purple);
 
         m_CommandList->close();
 
-        m_NvrhiDevice->queueWaitForSemaphore(nvrhi::CommandQueue::Graphics, currentAcquireSemaphore.get(), 0);
+        m_NvrhiDevice->queueWaitForSemaphore(nvrhi::CommandQueue::Graphics, frameAcquireSemaphore.get(), 0);
+        m_NvrhiDevice->queueSignalSemaphore(nvrhi::CommandQueue::Graphics, imageRenderCompleteSemaphore.get(), 0);
+
         m_NvrhiDevice->executeCommandList(m_CommandList);
-        m_NvrhiDevice->queueSignalSemaphore(nvrhi::CommandQueue::Graphics, currentRenderCompleteSemaphore.get(), 0);
 
         m_NvrhiDevice->resetEventQuery(currentRenderCompleteEvent);
         m_NvrhiDevice->setEventQuery(currentRenderCompleteEvent, nvrhi::CommandQueue::Graphics);
@@ -410,7 +491,7 @@ private:
         vk::SwapchainKHR rawSwapchain = m_SwapchainData.swapchain.get();
         vk::PresentInfoKHR presentInfo{};
         presentInfo.waitSemaphoreCount = 1;
-        vk::Semaphore waitSemaphores[] = {currentRenderCompleteSemaphore.get()};
+        vk::Semaphore waitSemaphores[] = {imageRenderCompleteSemaphore.get()};
         presentInfo.pWaitSemaphores = waitSemaphores;
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = &rawSwapchain;
@@ -429,10 +510,11 @@ private:
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;
 
     // Window
-    SDL_Window* m_Window = nullptr;
+    std::shared_ptr<SDL_Window> m_Window;
 
     // Vulkan objects
     vk::SharedInstance m_VkInstance;
+    vk::DebugUtilsMessengerEXT m_DebugMessenger; // Debug messenger for validation
     vk::SharedPhysicalDevice m_VkPhysicalDevice;
     vk::SharedSurfaceKHR m_VkSurface;
     vk::SharedDevice m_VkDevice;
@@ -447,8 +529,8 @@ private:
     SwapChainData m_SwapchainData;
 
     // Synchronization
-    std::array<vk::SharedHandle<vk::Semaphore>, MAX_FRAMES_IN_FLIGHT> m_AcquireSemaphores;
-    std::array<vk::SharedHandle<vk::Semaphore>, MAX_FRAMES_IN_FLIGHT> m_RenderCompleteSemaphores;
+    std::vector<vk::SharedHandle<vk::Semaphore>> m_AcquireSemaphores; // Per-frame (for acquire)
+    std::vector<vk::SharedHandle<vk::Semaphore>> m_RenderCompleteSemaphores; // Per-swapchain-image
     std::array<nvrhi::EventQueryHandle, MAX_FRAMES_IN_FLIGHT> m_RenderCompleteEvents;
     uint32_t m_CurrentFrame = 0;
 
@@ -458,8 +540,8 @@ private:
 };
 
 
-
-namespace Engine {
+namespace
+Engine {
     int Main(int argc, char **argv) {
         Application app;
 

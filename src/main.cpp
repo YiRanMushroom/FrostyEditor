@@ -6,6 +6,9 @@ import Core.Application;
 import ImGui.ImGuiApplication;
 import Render.Color;
 import ImGui.ImGui;
+import Render.Image;
+import Core.STLExtension;
+import Core.FileSystem;
 
 namespace
 Engine {
@@ -22,19 +25,68 @@ Engine {
             ImGui::Text("This is my pink texture rendered in ImGui:");
             ImGui::ImageAutoManaged(mImGuiTexture, ImVec2(128, 128));
 
-            // auto& commandList = mApp.get()->GetCommandList();
-            // commandList->setTextureState(mMyTexture, nvrhi::AllSubresources, nvrhi::ResourceStates::ShaderResource);
+
+            if (ImGui::Button("Load More Images")) {
+                mLoadingFutures.push_back(OpenDialogAndLoadImagesAsync());
+            }
 
             ImGui::End();
+
+            OnFrameEnded([this] {
+                std::erase_if(
+                    mLoadedImages,
+                    [](const auto &pair) {
+                        return !pair.second;
+                    }
+                );
+            });
+
+
+            std::erase_if(
+                mLoadingFutures,
+                [this](std::future<std::vector<ImGui::ImGuiImage>> &future) {
+                    if (future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                        auto images = future.get();
+                        for (auto &img: images) {
+                            mLoadedImages.emplace_back(std::move(img), true);
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+            );
+
+            for (size_t i = 0; i < mLoadedImages.size(); ++i) {
+                auto desc = mLoadedImages[i].first.GetTextureDesc();
+                ImGui::Begin(("Loaded Image " + std::to_string(i)).c_str(), &mLoadedImages[i].second);
+                ImGui::Text("Dimensions: %d x %d", desc.width, desc.height);
+
+                ImVec2 displaySize = ImVec2(static_cast<float>(desc.width), static_cast<float>(desc.height));
+
+                if (desc.width > 1920 || desc.height > 1080) {
+                    float aspectRatio = static_cast<float>(desc.width) / static_cast<float>(desc.height);
+                    if (aspectRatio > (1920.0f / 1080.0f)) {
+                        displaySize.x = 1920.0f;
+                        displaySize.y = 1920.0f / aspectRatio;
+                    } else {
+                        displaySize.y = 1080.0f;
+                        displaySize.x = 1080.0f * aspectRatio;
+                    }
+                    ImGui::Text("Image is too large, displaying scaled down version:");
+                }
+
+                ImGui::ImageAutoManaged(mLoadedImages[i].first,
+                                        displaySize);
+                ImGui::End();
+            }
         }
 
         void OnAttach(const std::shared_ptr<Application> &app) override {
             Layer::OnAttach(app);
 
-            // create a 16 by 16 MyPink texture using NVRHI and get an ImGui texture ID for it
-            nvrhi::Color color = Engine::Color::MyPink;
             InitMyTexture();
-            mImGuiTexture = ImGui::ImGuiImage::Create(mMyTexture, static_cast<ImGuiApplication *>(mApp.get())->GetImGuiTextureSampler());
+            mImGuiTexture = ImGui::ImGuiImage::Create(
+                mMyTexture, static_cast<ImGuiApplication *>(mApp.get())->GetImGuiTextureSampler());
         }
 
         void OnDetach() override {
@@ -45,26 +97,51 @@ Engine {
         }
 
         void OnRender(const nvrhi::CommandListHandle &commandList,
-                      const nvrhi::FramebufferHandle &framebuffer) override {
+                      const nvrhi::FramebufferHandle &framebuffer) override {}
+
+        std::future<std::vector<ImGui::ImGuiImage>> OpenDialogAndLoadImagesAsync() {
+            SDL_DialogFileFilter filters[] = {
+                {.name = "PNG Images", .pattern = "png"},
+                {.name = "JPEG Images", .pattern = "jpg;jpeg"},
+                {.name = "All Files", .pattern = "*"}
+            };
+
+            return OpenFileDialogAsync(mApp->GetWindow().get(), filters)
+                   | Then([](std::vector<std::filesystem::path> paths) {
+                       std::vector<CPUSimpleImage> images;
+                       for (const auto &path: paths) {
+                           images.push_back(LoadImageFromFile(path));
+                       }
+                       return images;
+                   })
+                   | Then([this](std::vector<CPUSimpleImage> cpuImages) {
+                       std::vector<ImGui::ImGuiImage> imguiImages;
+                       auto &device = mApp.get()->GetNvrhiDevice();
+                       auto newCommandList = device->createCommandList();
+                       auto gpuImages = UploadImagesToGPU(
+                           cpuImages | std::views::transform([](const CPUSimpleImage &it) {
+                               return it.GetGPUDescriptor();
+                           }) | std::ranges::to<std::vector<SimpleGPUImageDescriptor>>(),
+                           device.Get(),
+                           newCommandList);
+
+                       return gpuImages | std::views::transform([this](const nvrhi::TextureHandle &tex) {
+                           return ImGui::ImGuiImage::Create(
+                               tex,
+                               static_cast<ImGuiApplication *>(mApp.get())->GetImGuiTextureSampler());
+                       }) | std::ranges::to<std::vector<ImGui::ImGuiImage>>();
+                   });
         }
 
     private:
         nvrhi::TextureHandle mMyTexture;
         ImGui::ImGuiImage mImGuiTexture;
 
-        void InitMyTexture() {
-            auto& mNvrhiDevice = static_cast<ImGuiApplication *>(mApp.get())->GetNvrhiDevice();
-            nvrhi::TextureDesc desc;
-            desc.width = 16;
-            desc.height = 16;
-            desc.format = nvrhi::Format::RGBA8_UNORM;
-            desc.debugName = "MyPinkTexture";
-            desc.isRenderTarget = false;
-            desc.isUAV = false;
-            desc.initialState = nvrhi::ResourceStates::ShaderResource;
-            desc.keepInitialState = true;
+        std::vector<std::pair<ImGui::ImGuiImage, bool>> mLoadedImages;
+        std::vector<std::future<std::vector<ImGui::ImGuiImage>>> mLoadingFutures;
 
-            nvrhi::TextureHandle pinkTexture = mNvrhiDevice->createTexture(desc);
+        void InitMyTexture() {
+            auto &mNvrhiDevice = mApp.get()->GetNvrhiDevice();
 
             auto color = Engine::Color::MyPink;
             uint8_t r = static_cast<uint8_t>(color.r * 255.0f);
@@ -72,14 +149,17 @@ Engine {
             uint8_t b = static_cast<uint8_t>(color.b * 255.0f);
             uint8_t a = static_cast<uint8_t>(color.a * 255.0f);
 
-            std::vector<uint32_t> pixels(16 * 16, (a << 24) | (b << 16) | (g << 8) | r);
+            std::vector<uint32_t> pixels(15 * 15, (a << 24) | (b << 16) | (g << 8) | r);
 
-            auto& mCommandList = static_cast<ImGuiApplication *>(mApp.get())->GetCommandList();
-
-            mCommandList->open();
-            mCommandList->writeTexture(pinkTexture, 0, 0, pixels.data(), 16 * sizeof(uint32_t));
-            mCommandList->close();
-            mNvrhiDevice->executeCommandList(mCommandList);
+            nvrhi::TextureHandle pinkTexture = UploadImageToGPU(
+                SimpleGPUImageDescriptor{
+                    .width = 15,
+                    .height = 15,
+                    .imageData = pixels
+                },
+                mNvrhiDevice,
+                mApp.get()->GetCommandList()
+            );
 
             mMyTexture = std::move(pinkTexture);
         }

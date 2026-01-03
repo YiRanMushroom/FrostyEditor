@@ -20,7 +20,7 @@ Engine {
 
             ImGui::Begin("MyPink Texture Window");
             ImGui::Text("This is my pink texture rendered in ImGui:");
-            ImGui::Image(mImGuiTexture.GetImGuiTextureID(), ImVec2(128, 128));
+            ImGui::ImageAutoManaged(mImGuiTexture, ImVec2(128, 128));
 
             // auto& commandList = mApp.get()->GetCommandList();
             // commandList->setTextureState(mMyTexture, nvrhi::AllSubresources, nvrhi::ResourceStates::ShaderResource);

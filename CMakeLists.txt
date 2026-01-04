@@ -8,12 +8,6 @@ add_executable(FrostyEditor src/main.cpp)
 file(GLOB_RECURSE IMPL_UNITS "src/*.cpp")
 file(GLOB_RECURSE INTERFACE_UNITS "src/*.ixx" "src/*.cppm")
 
-#target_compile_options(
-#        ${PROJECT_NAME}
-#        PRIVATE
-#        "/EHa"
-#)
-
 target_include_directories(
         ${PROJECT_NAME}
         PRIVATE

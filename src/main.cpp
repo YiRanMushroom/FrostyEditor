@@ -10,6 +10,7 @@ import Render.Image;
 import Core.STLExtension;
 import Core.FileSystem;
 import ImGuiDebugLayer;
+import RendererDevelopmentLayer;
 
 namespace
 Engine {
@@ -18,6 +19,7 @@ Engine {
         app->Init({
             .Title = "Frosty Engine App"
         });
+        app->EmplaceLayer<RendererDevelopmentLayer>();
         app->EmplaceLayer<ImGuiDebugTestLayer>();
         app->Run();
         app->DetachAllLayers();

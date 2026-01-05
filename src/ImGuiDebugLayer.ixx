@@ -120,6 +120,19 @@ public:
                    std::vector<ImGui::ImGuiImage> imguiImages;
                    auto &device = mApp.get()->GetNvrhiDevice();
                    auto newCommandList = device->createCommandList();
+                   /*
+                    *
+                   * auto gpuImages = this->SendToMainThreadToExecute(
+                       std::function<std::vector<nvrhi::TextureHandle>()>([&] {
+                           return UploadImagesToGPU(
+                               cpuImages | std::views::transform([](const CPUSimpleImage &it) {
+                                   return it.GetGPUDescriptor();
+                               }) | std::ranges::to<std::vector<SimpleGPUImageDescriptor>>(),
+                               device.Get(),
+                               newCommandList);
+                       }));
+                    */
+
                    auto gpuImages = UploadImagesToGPU(
                        cpuImages | std::views::transform([](const CPUSimpleImage &it) {
                            return it.GetGPUDescriptor();

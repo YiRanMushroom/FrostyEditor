@@ -56,14 +56,99 @@ private:
     uint64_t mCapacity;
 };
 
+class FramebufferPresenter {
+public:
+    FramebufferPresenter(nvrhi::IDevice *device, const nvrhi::FramebufferInfo &targetFramebufferInfo)
+        : mDevice(device) {
+        CreateResources(targetFramebufferInfo);
+    }
+
+    void Present(nvrhi::ICommandList *commandList, nvrhi::ITexture *sourceTexture,
+                nvrhi::IFramebuffer *targetFramebuffer) {
+        // Update binding set with the current source texture
+        nvrhi::BindingSetDesc setDesc;
+        setDesc.bindings = {
+            nvrhi::BindingSetItem::Texture_SRV(0, sourceTexture),
+            nvrhi::BindingSetItem::Sampler(0, mSampler)
+        };
+        auto bindingSet = mDevice->createBindingSet(setDesc, mBindingLayout);
+
+        commandList->setResourceStatesForFramebuffer(targetFramebuffer);
+        commandList->setResourceStatesForBindingSet(bindingSet);
+
+        nvrhi::GraphicsState state;
+        state.pipeline = mPipeline;
+        state.framebuffer = targetFramebuffer;
+        state.bindings = {bindingSet};
+        state.viewport.addViewportAndScissorRect(targetFramebuffer->getFramebufferInfo().getViewport());
+
+        commandList->setGraphicsState(state);
+        commandList->draw(nvrhi::DrawArguments().setVertexCount(3));
+    }
+
+private:
+    nvrhi::DeviceHandle mDevice;
+
+    nvrhi::SamplerHandle mSampler;
+    nvrhi::BindingLayoutHandle mBindingLayout;
+    nvrhi::GraphicsPipelineHandle mPipeline;
+
+    void CreateResources(const nvrhi::FramebufferInfo &targetFramebufferInfo) {
+        mSampler = mDevice->createSampler(nvrhi::SamplerDesc()
+            .setAllAddressModes(nvrhi::SamplerAddressMode::Clamp)
+            .setAllFilters(true));
+
+        // Create Binding Layout
+        nvrhi::BindingLayoutDesc layoutDesc;
+        layoutDesc.visibility = nvrhi::ShaderType::Pixel;
+        layoutDesc.bindings = {
+            nvrhi::BindingLayoutItem::Texture_SRV(0),
+            nvrhi::BindingLayoutItem::Sampler(0)
+        };
+        mBindingLayout = mDevice->createBindingLayout(layoutDesc);
+
+        // Create Pipeline
+        nvrhi::ShaderDesc vsDesc;
+        vsDesc.shaderType = nvrhi::ShaderType::Vertex;
+        vsDesc.entryName = "main";
+        nvrhi::ShaderHandle vs = mDevice->createShader(vsDesc,
+            GeneratedShaders::copy_to_main_framebuffer_vs.data(),
+            GeneratedShaders::copy_to_main_framebuffer_vs.size());
+
+        nvrhi::ShaderDesc psDesc;
+        psDesc.shaderType = nvrhi::ShaderType::Pixel;
+        psDesc.entryName = "main";
+        nvrhi::ShaderHandle ps = mDevice->createShader(psDesc,
+            GeneratedShaders::copy_to_main_framebuffer_ps.data(),
+            GeneratedShaders::copy_to_main_framebuffer_ps.size());
+
+        nvrhi::GraphicsPipelineDesc pipeDesc;
+        pipeDesc.VS = vs;
+        pipeDesc.PS = ps;
+        pipeDesc.bindingLayouts = {mBindingLayout};
+        pipeDesc.primType = nvrhi::PrimitiveType::TriangleList;
+
+        pipeDesc.renderState.blendState.targets[0].blendEnable = true;
+        pipeDesc.renderState.blendState.targets[0].srcBlend = nvrhi::BlendFactor::SrcAlpha;
+        pipeDesc.renderState.blendState.targets[0].destBlend = nvrhi::BlendFactor::InvSrcAlpha;
+        pipeDesc.renderState.blendState.targets[0].srcBlendAlpha = nvrhi::BlendFactor::One;
+        pipeDesc.renderState.blendState.targets[0].destBlendAlpha = nvrhi::BlendFactor::InvSrcAlpha;
+        pipeDesc.renderState.blendState.targets[0].colorWriteMask = nvrhi::ColorMask::All;
+
+        pipeDesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
+        pipeDesc.renderState.depthStencilState.depthTestEnable = false;
+
+        mPipeline = mDevice->createGraphicsPipeline(pipeDesc, targetFramebufferInfo);
+    }
+};
+
 class Renderer2D {
 public:
-    Renderer2D(nvrhi::IDevice *device, uint32_t width, uint32_t height, uint32_t bufferCount,
-               const nvrhi::FramebufferInfo &mainFramebufferInfo)
+    Renderer2D(nvrhi::IDevice *device, uint32_t width, uint32_t height, uint32_t bufferCount)
         : mDevice(device), mWidth(width), mHeight(height), mBufferCount(bufferCount),
           mTriangleBuffer(device, "Renderer2D_TriangleVB") {
         CreateResources();
-        CreatePipelines(mainFramebufferInfo);
+        CreatePipeline();
     }
 
     void StartRendering();
@@ -72,29 +157,30 @@ public:
 
     void EndRendering();
 
-    void PresentToMain(nvrhi::ICommandList *commandList, nvrhi::IFramebuffer *mainFramebuffer);
-
     void OnResize(uint32_t width, uint32_t height);
 
-    nvrhi::IFramebuffer *GetCurrentInternalFramebuffer() {
-        return mInternalFramebuffers[mFrameIndex % mBufferCount].Get();
+    nvrhi::ITexture *GetCurrentTexture() const {
+        return mTextures[mFrameIndex % mBufferCount].Get();
     }
+
+    const std::vector<nvrhi::TextureHandle> &GetTextures() const {
+        return mTextures;
+    }
+
+    uint64_t GetFrameIndex() const { return mFrameIndex; }
+
+    void AdvanceFrame() { mFrameIndex++; }
 
 private:
     nvrhi::DeviceHandle mDevice;
     uint32_t mWidth, mHeight, mBufferCount;
     uint64_t mFrameIndex = 0;
 
-    std::vector<nvrhi::TextureHandle> mInternalTextures;
-    std::vector<nvrhi::FramebufferHandle> mInternalFramebuffers;
-    std::vector<nvrhi::BindingSetHandle> mBlitBindingSets;
+    std::vector<nvrhi::TextureHandle> mTextures;
+    std::vector<nvrhi::FramebufferHandle> mFramebuffers;
 
-    nvrhi::SamplerHandle mSampler;
-    nvrhi::BindingLayoutHandle mBlitBindingLayout;
-    nvrhi::GraphicsPipelineHandle mBlitPipeline;
-
-    nvrhi::GraphicsPipelineHandle mTrianglePipeline;
-    nvrhi::InputLayoutHandle mTriangleInputLayout;
+    nvrhi::GraphicsPipelineHandle mPipeline;
+    nvrhi::InputLayoutHandle mInputLayout;
 
     nvrhi::CommandListHandle mCommandList;
 
@@ -103,16 +189,16 @@ private:
 
     void CreateResources();
 
-    void CreatePipelines(const nvrhi::FramebufferInfo &mainFramebufferInfo);
+    void CreatePipeline();
 };
 
 void Renderer2D::StartRendering() {
     mCommandList->open();
     mTriangleVertices.clear();
 
-    auto currentFB = GetCurrentInternalFramebuffer();
-    mCommandList->setResourceStatesForFramebuffer(currentFB);
-    mCommandList->clearTextureFloat(mInternalTextures[mFrameIndex % mBufferCount],
+    uint32_t slot = mFrameIndex % mBufferCount;
+    mCommandList->setResourceStatesForFramebuffer(mFramebuffers[slot]);
+    mCommandList->clearTextureFloat(mTextures[slot],
                                     nvrhi::AllSubresources, nvrhi::Color(0.f, 0.f, 0.f, 0.f));
 }
 
@@ -128,9 +214,10 @@ void Renderer2D::EndRendering() {
         mCommandList->writeBuffer(mTriangleBuffer.GetHandle(), mTriangleVertices.data(),
                                   mTriangleVertices.size() * sizeof(Vertex2D));
 
+        uint32_t slot = mFrameIndex % mBufferCount;
         nvrhi::GraphicsState state;
-        state.pipeline = mTrianglePipeline;
-        state.framebuffer = GetCurrentInternalFramebuffer();
+        state.pipeline = mPipeline;
+        state.framebuffer = mFramebuffers[slot];
         state.vertexBuffers = {{mTriangleBuffer.GetHandle(), 0, 0}};
         state.viewport.addViewportAndScissorRect(
             nvrhi::Viewport(static_cast<float>(mWidth), static_cast<float>(mHeight)));
@@ -146,113 +233,57 @@ void Renderer2D::EndRendering() {
     mDevice->executeCommandList(mCommandList);
 }
 
-void Renderer2D::PresentToMain(nvrhi::ICommandList *commandList, nvrhi::IFramebuffer *mainFramebuffer) {
-    uint32_t slot = mFrameIndex % mBufferCount;
-
-    commandList->setResourceStatesForFramebuffer(mainFramebuffer);
-    commandList->setResourceStatesForBindingSet(mBlitBindingSets[slot]);
-
-    nvrhi::GraphicsState state;
-    state.pipeline = mBlitPipeline;
-    state.framebuffer = mainFramebuffer;
-    state.bindings = {mBlitBindingSets[slot]};
-    state.viewport.addViewportAndScissorRect(mainFramebuffer->getFramebufferInfo().getViewport());
-
-    commandList->setGraphicsState(state);
-    commandList->draw(nvrhi::DrawArguments().setVertexCount(3));
-
-    mFrameIndex++;
-}
-
 void Renderer2D::OnResize(uint32_t width, uint32_t height) {
     if (width == mWidth && height == mHeight) return;
     mDevice->waitForIdle();
 
     mWidth = width;
     mHeight = height;
-    mInternalTextures.clear();
-    mInternalFramebuffers.clear();
-    mBlitBindingSets.clear();
+    mTextures.clear();
+    mFramebuffers.clear();
 
     CreateResources();
-    for (uint32_t i = 0; i < mBufferCount; ++i) {
-        nvrhi::BindingSetDesc setDesc;
-        setDesc.bindings = {
-            nvrhi::BindingSetItem::Texture_SRV(0, mInternalTextures[i]),
-            nvrhi::BindingSetItem::Sampler(0, mSampler)
-        };
-        mBlitBindingSets.push_back(mDevice->createBindingSet(setDesc, mBlitBindingLayout));
-    }
 }
 
 void Renderer2D::CreateResources() {
-    mSampler = mDevice->createSampler(nvrhi::SamplerDesc()
-        .setAllAddressModes(nvrhi::SamplerAddressMode::Clamp)
-        .setAllFilters(true));
-
     nvrhi::TextureDesc texDesc;
     texDesc.width = mWidth;
     texDesc.height = mHeight;
     texDesc.format = nvrhi::Format::RGBA8_UNORM;
     texDesc.isRenderTarget = true;
     texDesc.isShaderResource = true;
-
     texDesc.initialState = nvrhi::ResourceStates::ShaderResource;
     texDesc.keepInitialState = true;
-
     texDesc.clearValue = nvrhi::Color(0.f, 0.f, 0.f, 0.f);
 
     for (uint32_t i = 0; i < mBufferCount; ++i) {
         auto tex = mDevice->createTexture(texDesc);
-        mInternalTextures.push_back(tex);
-        mInternalFramebuffers.push_back(mDevice->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(tex)));
+        mTextures.push_back(tex);
+        mFramebuffers.push_back(mDevice->createFramebuffer(
+            nvrhi::FramebufferDesc().addColorAttachment(tex)));
     }
-    mCommandList = mDevice->createCommandList();
+
+    if (!mCommandList) {
+        mCommandList = mDevice->createCommandList();
+    }
 }
 
-void Renderer2D::CreatePipelines(const nvrhi::FramebufferInfo &mainFramebufferInfo) {
-    // -------------------------------------------------------------------------
-    // 1. Create Blit Binding Layout
-    // -------------------------------------------------------------------------
-    nvrhi::BindingLayoutDesc layoutDesc;
-    layoutDesc.visibility = nvrhi::ShaderType::Pixel;
-    layoutDesc.bindings = {
-        nvrhi::BindingLayoutItem::Texture_SRV(0), // t0: Texture
-        nvrhi::BindingLayoutItem::Sampler(0) // s0: Sampler
-    };
+void Renderer2D::CreatePipeline() {
+    nvrhi::ShaderDesc vsDesc;
+    vsDesc.shaderType = nvrhi::ShaderType::Vertex;
+    vsDesc.entryName = "main";
+    vsDesc.debugName = "Triangle_VS";
+    nvrhi::ShaderHandle vs = mDevice->createShader(vsDesc,
+        GeneratedShaders::simple_vb_triangle_vs.data(),
+        GeneratedShaders::simple_vb_triangle_vs.size());
 
-    mBlitBindingLayout = mDevice->createBindingLayout(layoutDesc);
-
-    // -------------------------------------------------------------------------
-    // 2. Create Blit Binding Sets
-    // -------------------------------------------------------------------------
-    mBlitBindingSets.clear();
-    for (uint32_t i = 0; i < mBufferCount; ++i) {
-        nvrhi::BindingSetDesc setDesc;
-        setDesc.bindings = {
-            nvrhi::BindingSetItem::Texture_SRV(0, mInternalTextures[i]),
-            nvrhi::BindingSetItem::Sampler(0, mSampler)
-        };
-
-        mBlitBindingSets.push_back(mDevice->createBindingSet(setDesc, mBlitBindingLayout));
-    }
-
-    // -------------------------------------------------------------------------
-    // 3. Create Triangle Pipeline (Internal Rendering)
-    // -------------------------------------------------------------------------
-    nvrhi::ShaderDesc triVSDesc;
-    triVSDesc.shaderType = nvrhi::ShaderType::Vertex;
-    triVSDesc.entryName = "main";
-    triVSDesc.debugName = "Triangle_VS";
-    nvrhi::ShaderHandle triVS = mDevice->createShader(triVSDesc, GeneratedShaders::simple_vb_triangle_vs.data(),
-                                                      GeneratedShaders::simple_vb_triangle_vs.size());
-
-    nvrhi::ShaderDesc triPSDesc;
-    triPSDesc.shaderType = nvrhi::ShaderType::Pixel;
-    triPSDesc.entryName = "main";
-    triPSDesc.debugName = "Triangle_PS";
-    nvrhi::ShaderHandle triPS = mDevice->createShader(triPSDesc, GeneratedShaders::simple_vb_triangle_ps.data(),
-                                                      GeneratedShaders::simple_vb_triangle_ps.size());
+    nvrhi::ShaderDesc psDesc;
+    psDesc.shaderType = nvrhi::ShaderType::Pixel;
+    psDesc.entryName = "main";
+    psDesc.debugName = "Triangle_PS";
+    nvrhi::ShaderHandle ps = mDevice->createShader(psDesc,
+        GeneratedShaders::simple_vb_triangle_ps.data(),
+        GeneratedShaders::simple_vb_triangle_ps.size());
 
     nvrhi::VertexAttributeDesc posAttr;
     posAttr.name = "POSITION";
@@ -261,70 +292,39 @@ void Renderer2D::CreatePipelines(const nvrhi::FramebufferInfo &mainFramebufferIn
     posAttr.offset = 0;
     posAttr.elementStride = sizeof(Vertex2D);
 
-    mTriangleInputLayout = mDevice->createInputLayout(&posAttr, 1, triVS);
+    mInputLayout = mDevice->createInputLayout(&posAttr, 1, vs);
 
-    nvrhi::GraphicsPipelineDesc triPipeDesc;
-    triPipeDesc.VS = triVS;
-    triPipeDesc.PS = triPS;
-    triPipeDesc.inputLayout = mTriangleInputLayout;
-    triPipeDesc.primType = nvrhi::PrimitiveType::TriangleList;
+    nvrhi::GraphicsPipelineDesc pipeDesc;
+    pipeDesc.VS = vs;
+    pipeDesc.PS = ps;
+    pipeDesc.inputLayout = mInputLayout;
+    pipeDesc.primType = nvrhi::PrimitiveType::TriangleList;
 
-    triPipeDesc.renderState.blendState.targets[0].blendEnable = true;
-    triPipeDesc.renderState.blendState.targets[0].srcBlend = nvrhi::BlendFactor::SrcAlpha;
-    triPipeDesc.renderState.blendState.targets[0].destBlend = nvrhi::BlendFactor::InvSrcAlpha;
-    triPipeDesc.renderState.blendState.targets[0].srcBlendAlpha = nvrhi::BlendFactor::One;
-    triPipeDesc.renderState.blendState.targets[0].destBlendAlpha = nvrhi::BlendFactor::InvSrcAlpha;
-    triPipeDesc.renderState.blendState.targets[0].colorWriteMask = nvrhi::ColorMask::All;
+    pipeDesc.renderState.blendState.targets[0].blendEnable = true;
+    pipeDesc.renderState.blendState.targets[0].srcBlend = nvrhi::BlendFactor::SrcAlpha;
+    pipeDesc.renderState.blendState.targets[0].destBlend = nvrhi::BlendFactor::InvSrcAlpha;
+    pipeDesc.renderState.blendState.targets[0].srcBlendAlpha = nvrhi::BlendFactor::One;
+    pipeDesc.renderState.blendState.targets[0].destBlendAlpha = nvrhi::BlendFactor::InvSrcAlpha;
+    pipeDesc.renderState.blendState.targets[0].colorWriteMask = nvrhi::ColorMask::All;
 
-    triPipeDesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
-    triPipeDesc.renderState.depthStencilState.depthTestEnable = false;
+    pipeDesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
+    pipeDesc.renderState.depthStencilState.depthTestEnable = false;
 
-    mTrianglePipeline = mDevice->createGraphicsPipeline(triPipeDesc, mInternalFramebuffers[0]->getFramebufferInfo());
-
-    // -------------------------------------------------------------------------
-    // 4. Create Blit Pipeline (Output Rendering)
-    // -------------------------------------------------------------------------
-    nvrhi::ShaderDesc blitVSDesc;
-    blitVSDesc.shaderType = nvrhi::ShaderType::Vertex;
-    blitVSDesc.entryName = "main";
-    nvrhi::ShaderHandle blitVS = mDevice->createShader(blitVSDesc, GeneratedShaders::copy_to_main_framebuffer_vs.data(),
-                                                       GeneratedShaders::copy_to_main_framebuffer_vs.size());
-
-    nvrhi::ShaderDesc blitPSDesc;
-    blitPSDesc.shaderType = nvrhi::ShaderType::Pixel;
-    blitPSDesc.entryName = "main";
-    nvrhi::ShaderHandle blitPS = mDevice->createShader(blitPSDesc, GeneratedShaders::copy_to_main_framebuffer_ps.data(),
-                                                       GeneratedShaders::copy_to_main_framebuffer_ps.size());
-
-    nvrhi::GraphicsPipelineDesc blitPipeDesc;
-    blitPipeDesc.VS = blitVS;
-    blitPipeDesc.PS = blitPS;
-    blitPipeDesc.bindingLayouts = {mBlitBindingLayout};
-    blitPipeDesc.primType = nvrhi::PrimitiveType::TriangleList;
-
-    blitPipeDesc.renderState.blendState.targets[0].blendEnable = true;
-    blitPipeDesc.renderState.blendState.targets[0].srcBlend = nvrhi::BlendFactor::SrcAlpha;
-    blitPipeDesc.renderState.blendState.targets[0].destBlend = nvrhi::BlendFactor::InvSrcAlpha;
-    blitPipeDesc.renderState.blendState.targets[0].srcBlendAlpha = nvrhi::BlendFactor::One;
-    blitPipeDesc.renderState.blendState.targets[0].destBlendAlpha = nvrhi::BlendFactor::InvSrcAlpha;
-    blitPipeDesc.renderState.blendState.targets[0].colorWriteMask = nvrhi::ColorMask::All;
-
-    blitPipeDesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
-    blitPipeDesc.renderState.depthStencilState.depthTestEnable = false;
-
-    mBlitPipeline = mDevice->createGraphicsPipeline(blitPipeDesc, mainFramebufferInfo);
+    mPipeline = mDevice->createGraphicsPipeline(pipeDesc, mFramebuffers[0]->getFramebufferInfo());
 }
-
 
 export class RendererDevelopmentLayer : public Layer {
 public:
     virtual void OnAttach(const std::shared_ptr<Application> &app) override {
         Layer::OnAttach(app);
         auto &swapchain = mApp->GetSwapchainData();
+
         mRenderer = std::make_shared<Renderer2D>(mApp->GetNvrhiDevice().Get(),
                                                  swapchain.GetWidth(),
-                                                 swapchain.GetHeight(), 2,
-                                                 swapchain.GetFramebufferInfo());
+                                                 swapchain.GetHeight(), 2);
+
+        mPresenter = std::make_shared<FramebufferPresenter>(mApp->GetNvrhiDevice().Get(),
+                                                            swapchain.GetFramebufferInfo());
     }
 
     virtual void OnRender(const nvrhi::CommandListHandle &commandList,
@@ -335,7 +335,11 @@ public:
             mRenderer->DrawTriangle({0.1f * i, -0.5f}, {0.1f * i + 0.05f, 0.5f}, {0.1f * i + 0.1f, -0.5f});
         }
         mRenderer->EndRendering();
-        mRenderer->PresentToMain(commandList, framebuffer);
+
+        // Present the renderer's output to the main framebuffer
+        mPresenter->Present(commandList, mRenderer->GetCurrentTexture(), framebuffer);
+
+        mRenderer->AdvanceFrame();
     }
 
     virtual bool OnEvent(const Event &event) override {
@@ -350,4 +354,5 @@ public:
 
 private:
     std::shared_ptr<Renderer2D> mRenderer;
+    std::shared_ptr<FramebufferPresenter> mPresenter;
 };

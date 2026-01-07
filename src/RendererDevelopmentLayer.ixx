@@ -21,19 +21,28 @@ struct Vertex2D {
     float Position[2];
 };
 
-class DynamicVertexBuffer {
+struct DynamicVertexBuffer {
 public:
     DynamicVertexBuffer(nvrhi::IDevice *device, const std::string &debugName)
-        : mDevice(device), mDebugName(debugName), mCapacity(0) {}
+        : mDevice(device), mDebugName(debugName), mCapacity(96) {
+        nvrhi::BufferDesc desc;
+        desc.byteSize = mCapacity * sizeof(Vertex2D);
+        desc.isVertexBuffer = true;
+        desc.debugName = mDebugName;
+        desc.initialState = nvrhi::ResourceStates::VertexBuffer;
+        desc.keepInitialState = true;
+
+        mHandle = mDevice->createBuffer(desc);
+    }
 
     void EnsureCapacity(uint64_t neededVertexCount) {
         if (neededVertexCount <= mCapacity) return;
 
-        // Exponential growth strategy: 1.5x
-        uint64_t newCapacity = std::max(neededVertexCount, mCapacity + mCapacity / 2);
-        if (newCapacity < 1024) newCapacity = 1024; // Minimum initial capacity
+        // Exponential growth strategy: 2x
+        uint64_t newCapacity = std::max(neededVertexCount, 2 * mCapacity);
+        if (newCapacity < 96) newCapacity = 96; // Minimum initial capacity
 
-        mDevice->waitForIdle();
+        // mDevice->waitForIdle();
 
         nvrhi::BufferDesc desc;
         desc.byteSize = newCapacity * sizeof(Vertex2D);
@@ -56,7 +65,7 @@ private:
     uint64_t mCapacity;
 };
 
-class FramebufferPresenter {
+export class FramebufferPresenter {
 public:
     FramebufferPresenter(nvrhi::IDevice *device, const nvrhi::FramebufferInfo &targetFramebufferInfo)
         : mDevice(device) {

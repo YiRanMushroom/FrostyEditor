@@ -109,6 +109,7 @@ export struct TriangleVertexData {
     std::array<float, 2> position;
     std::array<float, 2> texCoords;
     uint32_t constantIndex;
+    uint32_t padding[3];
 };
 
 export struct SpriteData {
@@ -369,7 +370,7 @@ public:
         CreatePipelines();
     }
 
-    void StartRendering();
+    void BeginRendering(uint32_t frameIndex);
 
     void EndRendering();
 
@@ -385,10 +386,9 @@ public:
 
     uint64_t GetFrameIndex() const { return mFrameIndex; }
 
-    void AdvanceFrame() {
+    void Clear() {
         mVirtualTextureManager.Clear();
         mTriangleCommandList.Clear();
-        mFrameIndex++;
     }
 
     [[nodiscard]] int GetCurrentDepth() const { return mCurrentDepth; }
@@ -504,7 +504,11 @@ public:
                                     nvrhi::Color tintColor = nvrhi::Color(1.f, 1.f, 1.f, 1.f));
 };
 
-void Renderer2D::StartRendering() {
+void Renderer2D::BeginRendering(uint32_t frameIndex) {
+    mFrameIndex = frameIndex;
+
+    Clear();
+
     mCommandList->open();
 
     uint32_t slot = mFrameIndex % mBufferCount;
@@ -933,30 +937,31 @@ public:
     }
 
     virtual void OnRender(const nvrhi::CommandListHandle &commandList,
-                          const nvrhi::FramebufferHandle &framebuffer) override {
-        mRenderer->StartRendering();
-        // mRenderer->DrawTriangleColored(
-        //     {50.f, 50.f}, // v0
-        //     {150.f, 50.f}, // v1
-        //     {100.f, 150.f}, // v2
-        //     nvrhi::Color(1.0f, 0.0f, 0.0f, 1.0f)
-        // );
-        //
-        // mRenderer->DrawQuadColored(
-        //     {400.f, 300.f}, // TL
-        //     {600.f, 300.f}, // TR
-        //     {600.f, 500.f}, // BR
-        //     {400.f, 500.f}, // BL
-        //     nvrhi::Color(0.0f, 0.0f, 1.0f, 1.0f)
-        // );
-        //
-        // mRenderer->SetCurrentDepth(0);
-        // mRenderer->DrawQuadColored({700.f, 100.f}, {900.f, 100.f}, {900.f, 300.f}, {700.f, 300.f},
-        //                            nvrhi::Color(0.0f, 1.0f, 0.0f, 1.0f));
-        //
-        // mRenderer->SetCurrentDepth(1);
-        // mRenderer->DrawQuadColored({750.f, 150.f}, {950.f, 150.f}, {950.f, 350.f}, {750.f, 350.f},
-        //                            nvrhi::Color(1.0f, 1.0f, 0.0f, 1.0f));
+                          const nvrhi::FramebufferHandle &framebuffer, uint32_t frameIndex) override {
+        mRenderer->BeginRendering(frameIndex);
+
+        mRenderer->DrawTriangleColored(
+            {50.f, 50.f}, // v0
+            {150.f, 50.f}, // v1
+            {100.f, 150.f}, // v2
+            nvrhi::Color(1.0f, 0.0f, 0.0f, 1.0f)
+        );
+
+        mRenderer->DrawQuadColored(
+            {400.f, 300.f}, // TL
+            {600.f, 300.f}, // TR
+            {600.f, 500.f}, // BR
+            {400.f, 500.f}, // BL
+            nvrhi::Color(0.0f, 0.0f, 1.0f, 1.0f)
+        );
+
+        mRenderer->SetCurrentDepth(0);
+        mRenderer->DrawQuadColored({700.f, 100.f}, {900.f, 100.f}, {900.f, 300.f}, {700.f, 300.f},
+                                   nvrhi::Color(0.0f, 1.0f, 0.0f, 1.0f));
+
+        mRenderer->SetCurrentDepth(1);
+        mRenderer->DrawQuadColored({750.f, 150.f}, {950.f, 150.f}, {950.f, 350.f}, {750.f, 350.f},
+                                   nvrhi::Color(1.0f, 1.0f, 0.0f, 1.0f));
 
         // now we test textures
         uint32_t texIdRed = mRenderer->RegisterVirtualTextureForThisFrame(mRedTextureHandle);
@@ -994,8 +999,6 @@ public:
 
         // Present the renderer's output to the main framebuffer
         mPresenter->Present(commandList, mRenderer->GetCurrentTexture(), framebuffer);
-
-        mRenderer->AdvanceFrame();
     }
 
     virtual bool OnEvent(const Event &event) override {

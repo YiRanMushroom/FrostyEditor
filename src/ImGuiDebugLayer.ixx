@@ -99,7 +99,7 @@ public:
     }
 
     void OnRender(const nvrhi::CommandListHandle &commandList,
-                  const nvrhi::FramebufferHandle &framebuffer) override {}
+                  const nvrhi::FramebufferHandle &framebuffer, uint32_t) override {}
 
     std::future<std::vector<ImGui::ImGuiImage>> OpenDialogAndLoadImagesAsync() {
         SDL_DialogFileFilter filters[] = {

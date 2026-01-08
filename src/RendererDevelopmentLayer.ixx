@@ -428,28 +428,22 @@ struct BatchRenderingResources {
 
 class Renderer2D {
 public:
-    Renderer2D(nvrhi::IDevice *device, uint32_t width, uint32_t height, uint32_t bufferCount)
-        : mDevice(device), mWidth(width), mHeight(height), mBufferCount(bufferCount), mVirtualTextureManager(device) {
+    Renderer2D(nvrhi::IDevice *device, uint32_t width, uint32_t height)
+        : mDevice(device), mWidth(width), mHeight(height), mVirtualTextureManager(device) {
         CreateResources();
         CreateConstantBuffers();
         CreatePipelines();
     }
 
-    void BeginRendering(uint32_t frameIndex);
+    void BeginRendering();
 
     void EndRendering();
 
     void OnResize(uint32_t width, uint32_t height);
 
-    nvrhi::ITexture *GetCurrentTexture() const {
-        return mTextures[mFrameIndex % mBufferCount].Get();
+    nvrhi::ITexture *GetTexture() const {
+        return mTexture.Get();
     }
-
-    const std::vector<nvrhi::TextureHandle> &GetTextures() const {
-        return mTextures;
-    }
-
-    uint64_t GetFrameIndex() const { return mFrameIndex; }
 
     void Clear() {
         mTriangleCommandList.Clear();
@@ -467,11 +461,10 @@ private:
 
 private:
     nvrhi::DeviceHandle mDevice;
-    uint32_t mWidth, mHeight, mBufferCount;
-    uint64_t mFrameIndex = 0;
+    uint32_t mWidth, mHeight;
 
-    std::vector<nvrhi::TextureHandle> mTextures;
-    std::vector<nvrhi::FramebufferHandle> mFramebuffers;
+    nvrhi::TextureHandle mTexture;
+    nvrhi::FramebufferHandle mFramebuffer;
 
     PersistentVirtualTextureManager mVirtualTextureManager;
 
@@ -568,16 +561,13 @@ public:
                                     nvrhi::Color tintColor = nvrhi::Color(1.f, 1.f, 1.f, 1.f));
 };
 
-void Renderer2D::BeginRendering(uint32_t frameIndex) {
-    mFrameIndex = frameIndex;
-
+void Renderer2D::BeginRendering() {
     Clear();
 
     mCommandList->open();
 
-    uint32_t slot = mFrameIndex % mBufferCount;
-    mCommandList->setResourceStatesForFramebuffer(mFramebuffers[slot]);
-    mCommandList->clearTextureFloat(mTextures[slot],
+    mCommandList->setResourceStatesForFramebuffer(mFramebuffer);
+    mCommandList->clearTextureFloat(mTexture,
                                     nvrhi::AllSubresources, nvrhi::Color(0.f, 0.f, 0.f, 0.f));
 }
 
@@ -604,8 +594,8 @@ void Renderer2D::OnResize(uint32_t width, uint32_t height) {
 
     mWidth = width;
     mHeight = height;
-    mTextures.clear();
-    mFramebuffers.clear();
+    mTexture.Reset();
+    mFramebuffer.Reset();
 
     CreateResources();
 
@@ -710,12 +700,10 @@ void Renderer2D::CreateResources() {
     texDesc.keepInitialState = true;
     texDesc.clearValue = nvrhi::Color(0.f, 0.f, 0.f, 0.f);
 
-    for (uint32_t i = 0; i < mBufferCount; ++i) {
-        auto tex = mDevice->createTexture(texDesc);
-        mTextures.push_back(tex);
-        mFramebuffers.push_back(mDevice->createFramebuffer(
-            nvrhi::FramebufferDesc().addColorAttachment(tex)));
-    }
+    auto tex = mDevice->createTexture(texDesc);
+    mTexture = tex;
+    mFramebuffer = mDevice->createFramebuffer(
+        nvrhi::FramebufferDesc().addColorAttachment(tex));
 
     if (!mCommandList) {
         mCommandList = mDevice->createCommandList();
@@ -734,7 +722,7 @@ void Renderer2D::CreateResources() {
     uint32_t hardwareMax = deviceProperties.limits.maxDescriptorSetSampledImages;
 
     mBindlessTextureArraySizeMax = std::min<uint32_t>(16384u, hardwareMax);
-    mTriangleBufferInstanceSizeMax = 1u << 18; // 2^18 instances
+    mTriangleBufferInstanceSizeMax = 1 << 18; // 2^18 instances
 
     mViewProjectionMatrix = {
         2.0f / static_cast<float>(mWidth), 0.0f, 0.0f, 0.0f,
@@ -867,7 +855,7 @@ void Renderer2D::CreatePipelineTriangle() {
     pipeDesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
     pipeDesc.renderState.depthStencilState.depthTestEnable = false;
 
-    mTrianglePipeline = mDevice->createGraphicsPipeline(pipeDesc, mFramebuffers[0]->getFramebufferInfo());
+    mTrianglePipeline = mDevice->createGraphicsPipeline(pipeDesc, mFramebuffer->getFramebufferInfo());
 
     CreateTriangleBatchRenderingResources(4); // this should be enough for most cases, if not we can always expand it
 }
@@ -922,9 +910,9 @@ void Renderer2D::SubmitTriangleBatchRendering() {
         // Draw Call
         nvrhi::GraphicsState state;
         state.pipeline = mTrianglePipeline;
-        state.framebuffer = mFramebuffers[mFrameIndex % mBufferCount];
+        state.framebuffer = mFramebuffer;
         state.viewport.addViewportAndScissorRect(
-            mFramebuffers[mFrameIndex % mBufferCount]->getFramebufferInfo().getViewport());
+            mFramebuffer->getFramebufferInfo().getViewport());
         state.bindings.push_back(resources.mBindingSetSpace0);
         state.bindings.push_back(bindingSetSpace1);
 
@@ -965,7 +953,7 @@ public:
 
         mRenderer = std::make_shared<Renderer2D>(mApp->GetNvrhiDevice().Get(),
                                                  swapchain.GetWidth(),
-                                                 swapchain.GetHeight(), 2);
+                                                 swapchain.GetHeight());
 
         mPresenter = std::make_shared<FramebufferPresenter>(mApp->GetNvrhiDevice().Get(),
                                                             swapchain.GetFramebufferInfo());
@@ -1004,7 +992,7 @@ public:
                           const nvrhi::FramebufferHandle &framebuffer, uint32_t frameIndex) override {
         ImGui::Begin("TriangleBasedRenderingCommandList Profiling");
 
-        mRenderer->BeginRendering(frameIndex);
+        mRenderer->BeginRendering();
 
         const int quadCountX = 250;
         const int quadCountY = 150;
@@ -1047,7 +1035,7 @@ public:
         mRenderer->EndRendering();
 
         // Present the renderer's output to the main framebuffer
-        mPresenter->Present(commandList, mRenderer->GetCurrentTexture(), framebuffer);
+        mPresenter->Present(commandList, mRenderer->GetTexture(), framebuffer);
 
         ImGui::End();
     }

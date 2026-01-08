@@ -180,8 +180,9 @@ struct TriangleRendererSubmissionData {
 
     TriangleRendererSubmissionData() = default;
 
-    TriangleRendererSubmissionData(TriangleRendererSubmissionData&&) = default;
-    TriangleRendererSubmissionData& operator=(TriangleRendererSubmissionData&&) = default;
+    TriangleRendererSubmissionData(TriangleRendererSubmissionData &&) = default;
+
+    TriangleRendererSubmissionData &operator=(TriangleRendererSubmissionData &&) = default;
 
     void Clear() {
         VertexData.clear();
@@ -283,14 +284,18 @@ struct TriangleBasedRenderingCommandList {
             ++lastFrameSubmissionIt;
         }
 
-        std::unordered_map<int, uint32_t> textureIdToSlot;
         uint32_t nextTextureSlot = 0;
+
+        // Track last texture within the current submission (since Instances is sorted)
+        int32_t lastTextureIdInSubmission = std::numeric_limits<int32_t>::min();
+        int32_t lastTextureSlotInSubmission = -1;
 
         auto finalizeSubmission = [&]() mutable {
             if (!currentSubmission.VertexData.empty()) {
                 submissions.push_back(std::move(currentSubmission));
-                textureIdToSlot.clear();
                 nextTextureSlot = 0;
+                lastTextureIdInSubmission = std::numeric_limits<int32_t>::min();
+                lastTextureSlotInSubmission = -1;
 
                 if (lastFrameSubmissionIt == mLastFrameCache.end()) {
                     currentSubmission.Clear();
@@ -312,25 +317,25 @@ struct TriangleBasedRenderingCommandList {
                 finalizeSubmission();
             }
 
-            // Handle Virtual Texture Binding and remove duplicates
+            // Handle Virtual Texture Binding: rely on sorted order, de-dup consecutive IDs
             int32_t finalTextureIndex = -1;
             if (instance.VirtualTextureID >= 0) {
-                auto it = textureIdToSlot.find(instance.VirtualTextureID);
-                if (it != textureIdToSlot.end()) {
-                    finalTextureIndex = static_cast<int32_t>(it->second);
+                if (instance.VirtualTextureID == lastTextureIdInSubmission) {
+                    // Same as previous, reuse slot
+                    finalTextureIndex = lastTextureSlotInSubmission;
                 } else {
-                    // Check if we need to finalize due to texture slot limit
+                    // New texture ID in sorted stream
                     if (nextTextureSlot >= bindlessTextureArraySizeMax) {
                         finalizeSubmission();
                     }
 
-                    // Bind new texture
                     nvrhi::TextureHandle tex = vtManager.GetTextureByID(instance.VirtualTextureID);
                     if (tex) {
                         currentSubmission.BindingSetDesc.addItem(
                             nvrhi::BindingSetItem::Texture_SRV(0, tex).setArrayElement(nextTextureSlot)
                         );
-                        textureIdToSlot[instance.VirtualTextureID] = nextTextureSlot;
+                        lastTextureIdInSubmission = instance.VirtualTextureID;
+                        lastTextureSlotInSubmission = static_cast<int32_t>(nextTextureSlot);
                         finalTextureIndex = static_cast<int32_t>(nextTextureSlot);
                         nextTextureSlot++;
                     } else {
@@ -347,7 +352,7 @@ struct TriangleBasedRenderingCommandList {
             SpriteData sprite;
             sprite.tintColor = instance.TintColor;
             sprite.textureIndex = finalTextureIndex;
-            currentSubmission.InstanceData.push_back(sprite);
+            currentSubmission.InstanceData.emplace_back(std::move(sprite));
 
             uint32_t baseVtx = static_cast<uint32_t>(currentSubmission.VertexData.size());
 
@@ -357,11 +362,11 @@ struct TriangleBasedRenderingCommandList {
                     v.position = {instance.Vertices[i].x, instance.Vertices[i].y};
                     v.texCoords = {instance.Vertices[i].u, instance.Vertices[i].v};
                     v.constantIndex = instanceIndex;
-                    currentSubmission.VertexData.push_back(v);
+                    currentSubmission.VertexData.emplace_back(std::move(v));
                 }
-                currentSubmission.IndexData.push_back(baseVtx);
-                currentSubmission.IndexData.push_back(baseVtx + 1);
-                currentSubmission.IndexData.push_back(baseVtx + 2);
+                currentSubmission.IndexData.emplace_back(baseVtx);
+                currentSubmission.IndexData.emplace_back(baseVtx + 1);
+                currentSubmission.IndexData.emplace_back(baseVtx + 2);
             } else {
                 // Quad (Assume TL, TR, BR, BL)
                 for (int i = 0; i < 4; ++i) {
@@ -369,26 +374,24 @@ struct TriangleBasedRenderingCommandList {
                     v.position = {instance.Vertices[i].x, instance.Vertices[i].y};
                     v.texCoords = {instance.Vertices[i].u, instance.Vertices[i].v};
                     v.constantIndex = instanceIndex;
-                    currentSubmission.VertexData.push_back(v);
+                    currentSubmission.VertexData.emplace_back(std::move(v));
                 }
-                currentSubmission.IndexData.push_back(baseVtx + 0);
-                currentSubmission.IndexData.push_back(baseVtx + 1);
-                currentSubmission.IndexData.push_back(baseVtx + 2);
-                currentSubmission.IndexData.push_back(baseVtx + 2);
-                currentSubmission.IndexData.push_back(baseVtx + 3);
-                currentSubmission.IndexData.push_back(baseVtx + 0);
+                currentSubmission.IndexData.emplace_back(baseVtx + 0);
+                currentSubmission.IndexData.emplace_back(baseVtx + 1);
+                currentSubmission.IndexData.emplace_back(baseVtx + 2);
+                currentSubmission.IndexData.emplace_back(baseVtx + 2);
+                currentSubmission.IndexData.emplace_back(baseVtx + 3);
+                currentSubmission.IndexData.emplace_back(baseVtx + 0);
             }
         }
 
         finalizeSubmission();
 
         auto recordEnd = std::chrono::high_resolution_clock::now();
-        ImGui::Begin("TriangleBasedRenderingCommandList Profiling");
         ImGui::Text("Sorting Time: %.3f ms",
                     std::chrono::duration<float, std::milli>(sortEnd - now).count());
         ImGui::Text("Recording Time: %.3f ms",
                     std::chrono::duration<float, std::milli>(recordEnd - sortEnd).count());
-        ImGui::End();
 
         return submissions;
     }
@@ -569,7 +572,14 @@ void Renderer2D::BeginRendering(uint32_t frameIndex) {
 void Renderer2D::EndRendering() {
     Submit();
     mCommandList->close();
+    // auto now = std::chrono::high_resolution_clock::now();
+    // nvrhi::EventQueryHandle eventQuery = mDevice->createEventQuery();
     mDevice->executeCommandList(mCommandList);
+    // mDevice->setEventQuery(eventQuery, nvrhi::CommandQueue::Graphics);
+    // mDevice->waitEventQuery(eventQuery);
+    // auto end = std::chrono::high_resolution_clock::now();
+    // ImGui::Text("GPU Submission Time: %.3f ms",
+    // std::chrono::duration<float, std::milli>(end - now).count());
 }
 
 void Renderer2D::OnResize(uint32_t width, uint32_t height) {
@@ -989,6 +999,8 @@ public:
 
     virtual void OnRender(const nvrhi::CommandListHandle &commandList,
                           const nvrhi::FramebufferHandle &framebuffer, uint32_t frameIndex) override {
+        ImGui::Begin("TriangleBasedRenderingCommandList Profiling");
+
         mRenderer->BeginRendering(frameIndex);
 
         const int quadCountX = 400;
@@ -1033,6 +1045,8 @@ public:
 
         // Present the renderer's output to the main framebuffer
         mPresenter->Present(commandList, mRenderer->GetCurrentTexture(), framebuffer);
+
+        ImGui::End();
     }
 
     virtual bool OnEvent(const Event &event) override {

@@ -176,7 +176,6 @@ struct TriangleRendererSubmissionData {
     std::vector<TriangleVertexData> VertexData;
     std::vector<uint32_t> IndexData;
     std::vector<SpriteData> InstanceData;
-    nvrhi::BindingSetDesc BindingSetDesc;
 
     TriangleRendererSubmissionData() = default;
 
@@ -188,42 +187,80 @@ struct TriangleRendererSubmissionData {
         VertexData.clear();
         IndexData.clear();
         InstanceData.clear();
-        BindingSetDesc.bindings.clear();
     }
 };
 
-export struct VirtualTextureManager {
-    std::vector<nvrhi::TextureHandle> VirtualTextures;
-    std::unordered_map<nvrhi::ITexture *, uint32_t> TextureToVirtualID;
+export class PersistentVirtualTextureManager {
+public:
+    explicit PersistentVirtualTextureManager(nvrhi::IDevice* device, uint32_t maxTextures = 65536)
+        : mDevice(device), mMaxTextures(maxTextures) {
+        mBindingSetDesc.bindings.reserve(mMaxTextures);
+    }
 
     uint32_t RegisterTexture(nvrhi::TextureHandle texture) {
-        auto it = TextureToVirtualID.find(texture);
+        if (!texture) return static_cast<uint32_t>(-1);
 
-        if (it != TextureToVirtualID.end()) {
+        auto it = mTextureToVirtualID.find(texture.Get());
+        if (it != mTextureToVirtualID.end()) {
             return it->second;
         }
 
-        uint32_t newID = static_cast<uint32_t>(VirtualTextures.size());
-        VirtualTextures.push_back(nvrhi::TextureHandle(texture));
-        TextureToVirtualID.insert({texture, newID});
+        if (mVirtualTextures.size() >= mMaxTextures) {
+            throw Engine::RuntimeException("VirtualTextureManager: Exceeded maximum texture limit (65536).");
+        }
+
+        uint32_t newID = static_cast<uint32_t>(mVirtualTextures.size());
+        mVirtualTextures.push_back(texture);
+        mTextureToVirtualID[texture.Get()] = newID;
+
+        mBindingSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, texture)
+                                .setArrayElement(newID));
+
+        mIsDirty = true;
         return newID;
     }
 
-    nvrhi::TextureHandle GetTextureByID(int virtualID) {
-        if (virtualID < 0 || static_cast<size_t>(virtualID) >= VirtualTextures.size()) {
+    nvrhi::BindingSetHandle GetBindingSet(nvrhi::IBindingLayout* layout) {
+        if (mVirtualTextures.empty()) {
             return nullptr;
         }
-        return VirtualTextures[virtualID];
+
+        if (mIsDirty || !mCurrentBindingSet) {
+            mCurrentBindingSet = mDevice->createBindingSet(mBindingSetDesc, layout);
+            mIsDirty = false;
+        }
+
+        return mCurrentBindingSet;
     }
 
-    uint32_t GetVirtualID(nvrhi::ITexture *texture) {
-        return RegisterTexture(texture);
+    nvrhi::TextureHandle GetTextureByID(uint32_t virtualID) const {
+        if (virtualID >= mVirtualTextures.size()) return nullptr;
+        return mVirtualTextures[virtualID];
     }
 
-    void Clear() {
-        VirtualTextures.clear();
-        TextureToVirtualID.clear();
+    bool IsSubOptimal() const {
+        return mVirtualTextures.size() >= mMaxTextures * 3 / 4;
     }
+
+    void Reset() {
+        mVirtualTextures.clear();
+        mTextureToVirtualID.clear();
+        mBindingSetDesc.bindings.clear();
+        mCurrentBindingSet = nullptr;
+        mIsDirty = true;
+    }
+
+private:
+    nvrhi::DeviceHandle mDevice;
+    uint32_t mMaxTextures;
+
+    std::vector<nvrhi::TextureHandle> mVirtualTextures;
+    std::unordered_map<nvrhi::ITexture*, uint32_t> mTextureToVirtualID;
+
+    nvrhi::BindingSetDesc mBindingSetDesc;
+    nvrhi::BindingSetHandle mCurrentBindingSet;
+
+    bool mIsDirty = true;
 };
 
 struct TriangleBasedRenderingCommandList {
@@ -260,7 +297,7 @@ struct TriangleBasedRenderingCommandList {
     std::vector<TriangleRendererSubmissionData> RecordRendererSubmissionData(
         uint32_t bindlessTextureArraySizeMax,
         size_t triangleBufferInstanceSizeMax,
-        VirtualTextureManager &vtManager) {
+        PersistentVirtualTextureManager &vtManager) {
         auto now = std::chrono::high_resolution_clock::now();
         // stable sort by depth, then by texture ID to minimize texture switches
         std::ranges::stable_sort(Instances, [](const auto &a, const auto &b) {
@@ -277,31 +314,20 @@ struct TriangleBasedRenderingCommandList {
         TriangleRendererSubmissionData currentSubmission;
         if (lastFrameSubmissionIt != mLastFrameCache.end()) {
             currentSubmission = std::move(*lastFrameSubmissionIt);
-            currentSubmission.BindingSetDesc = {};
             currentSubmission.VertexData.clear();
             currentSubmission.IndexData.clear();
             currentSubmission.InstanceData.clear();
             ++lastFrameSubmissionIt;
         }
 
-        uint32_t nextTextureSlot = 0;
-
-        // Track last texture within the current submission (since Instances is sorted)
-        int32_t lastTextureIdInSubmission = std::numeric_limits<int32_t>::min();
-        int32_t lastTextureSlotInSubmission = -1;
-
         auto finalizeSubmission = [&]() mutable {
             if (!currentSubmission.VertexData.empty()) {
                 submissions.push_back(std::move(currentSubmission));
-                nextTextureSlot = 0;
-                lastTextureIdInSubmission = std::numeric_limits<int32_t>::min();
-                lastTextureSlotInSubmission = -1;
 
                 if (lastFrameSubmissionIt == mLastFrameCache.end()) {
                     currentSubmission.Clear();
                 } else {
                     currentSubmission = std::move(*lastFrameSubmissionIt);
-                    currentSubmission.BindingSetDesc = {};
                     currentSubmission.VertexData.clear();
                     currentSubmission.IndexData.clear();
                     currentSubmission.InstanceData.clear();
@@ -317,35 +343,8 @@ struct TriangleBasedRenderingCommandList {
                 finalizeSubmission();
             }
 
-            // Handle Virtual Texture Binding: rely on sorted order, de-dup consecutive IDs
-            int32_t finalTextureIndex = -1;
-            if (instance.VirtualTextureID >= 0) {
-                if (instance.VirtualTextureID == lastTextureIdInSubmission) {
-                    // Same as previous, reuse slot
-                    finalTextureIndex = lastTextureSlotInSubmission;
-                } else {
-                    // New texture ID in sorted stream
-                    if (nextTextureSlot >= bindlessTextureArraySizeMax) {
-                        finalizeSubmission();
-                    }
-
-                    nvrhi::TextureHandle tex = vtManager.GetTextureByID(instance.VirtualTextureID);
-                    if (tex) {
-                        currentSubmission.BindingSetDesc.addItem(
-                            nvrhi::BindingSetItem::Texture_SRV(0, tex).setArrayElement(nextTextureSlot)
-                        );
-                        lastTextureIdInSubmission = instance.VirtualTextureID;
-                        lastTextureSlotInSubmission = static_cast<int32_t>(nextTextureSlot);
-                        finalTextureIndex = static_cast<int32_t>(nextTextureSlot);
-                        nextTextureSlot++;
-                    } else {
-                        throw Engine::RuntimeException(
-                            "Wrong use case: Virtual Texture ID not found in VirtualTextureManager. "
-                            "It could be because of storing a virtual texture id between frames."
-                            "Virtual Texture IDs are only valid per frame, you need to re-register the texture each frame.");
-                    }
-                }
-            }
+            // 直接使用全局虚拟纹理 ID，不再构建局部的纹理数组
+            int32_t finalTextureIndex = instance.VirtualTextureID;
 
             // Fill Instance Data
             auto instanceIndex = static_cast<uint32_t>(currentSubmission.InstanceData.size());
@@ -410,13 +409,14 @@ struct BatchRenderingResources {
     nvrhi::BufferHandle VertexBuffer;
     nvrhi::BufferHandle IndexBuffer;
     nvrhi::BufferHandle InstanceBuffer;
+    nvrhi::BindingSetHandle mBindingSetSpace0;
 };
 
 
 class Renderer2D {
 public:
     Renderer2D(nvrhi::IDevice *device, uint32_t width, uint32_t height, uint32_t bufferCount)
-        : mDevice(device), mWidth(width), mHeight(height), mBufferCount(bufferCount) {
+        : mDevice(device), mWidth(width), mHeight(height), mBufferCount(bufferCount), mVirtualTextureManager(device) {
         CreateResources();
         CreateConstantBuffers();
         CreatePipelines();
@@ -439,7 +439,6 @@ public:
     uint64_t GetFrameIndex() const { return mFrameIndex; }
 
     void Clear() {
-        mVirtualTextureManager.Clear();
         mTriangleCommandList.Clear();
     }
 
@@ -461,7 +460,7 @@ private:
     std::vector<nvrhi::TextureHandle> mTextures;
     std::vector<nvrhi::FramebufferHandle> mFramebuffers;
 
-    VirtualTextureManager mVirtualTextureManager;
+    PersistentVirtualTextureManager mVirtualTextureManager;
 
     size_t mBindlessTextureArraySizeMax{};
 
@@ -580,6 +579,10 @@ void Renderer2D::EndRendering() {
     // auto end = std::chrono::high_resolution_clock::now();
     // ImGui::Text("GPU Submission Time: %.3f ms",
     // std::chrono::duration<float, std::milli>(end - now).count());
+
+    if (mVirtualTextureManager.IsSubOptimal()) {
+        mVirtualTextureManager.Reset();
+    }
 }
 
 void Renderer2D::OnResize(uint32_t width, uint32_t height) {
@@ -726,8 +729,6 @@ void Renderer2D::CreateResources() {
         0.0f, 0.0f, 1.0f, 0.0f,
         -1.0f, 1.0f, 0.0f, 1.0f
     };
-
-    CreateTriangleBatchRenderingResources(4); // this should be enough for most cases, if not we can always expand it
 }
 
 void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
@@ -762,6 +763,12 @@ void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
         instanceBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
         instanceBufferDesc.keepInitialState = true;
         resources.InstanceBuffer = mDevice->createBuffer(instanceBufferDesc);
+
+        nvrhi::BindingSetDesc bindingSetDesc;
+        bindingSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, mTriangleConstantBuffer));
+        bindingSetDesc.addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, resources.InstanceBuffer));
+        bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(0, mTextureSampler));
+        resources.mBindingSetSpace0 = mDevice->createBindingSet(bindingSetDesc, mTriangleBindingLayouts[0]);
 
         mTriangleBatchRenderingResources.push_back(resources);
     }
@@ -848,6 +855,8 @@ void Renderer2D::CreatePipelineTriangle() {
     pipeDesc.renderState.depthStencilState.depthTestEnable = false;
 
     mTrianglePipeline = mDevice->createGraphicsPipeline(pipeDesc, mFramebuffers[0]->getFramebufferInfo());
+
+    CreateTriangleBatchRenderingResources(4); // this should be enough for most cases, if not we can always expand it
 }
 
 void Renderer2D::CreateConstantBufferTriangle() {
@@ -893,27 +902,15 @@ void Renderer2D::SubmitTriangleBatchRendering() {
                                       sizeof(SpriteData) * submission.InstanceData.size(), 0);
         }
 
-        // Create Binding Sets
-        nvrhi::BindingSetDesc &bindingSetDescSpace1 = submission.BindingSetDesc;
 
-        // sampler, constant buffer, instance buffer
-        nvrhi::BindingSetDesc bindingSetDescSpace0;
-        bindingSetDescSpace0.addItem(
-            nvrhi::BindingSetItem::ConstantBuffer(0, mTriangleConstantBuffer)
-        );
-        bindingSetDescSpace0.addItem(
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(0, resources.InstanceBuffer)
-        );
-        bindingSetDescSpace0.addItem(
-            nvrhi::BindingSetItem::Sampler(0, mTextureSampler)
-        );
 
-        nvrhi::BindingSetHandle bindingSets[2];
-        bindingSets[0] = mDevice->createBindingSet(bindingSetDescSpace0, mTriangleBindingLayouts[0]);
-        bindingSets[1] = mDevice->createBindingSet(bindingSetDescSpace1, mTriangleBindingLayouts[1]);
+        // nvrhi::BindingSetHandle bindingSets[2];
+        // bindingSets[0] = mDevice->createBindingSet(bindingSetDescSpace0, mTriangleBindingLayouts[0]);
+        // bindingSets[1] = mDevice->createBindingSet(bindingSetDescSpace1, mTriangleBindingLayouts[1]);
 
-        mCommandList->setResourceStatesForBindingSet(bindingSets[0]);
-        mCommandList->setResourceStatesForBindingSet(bindingSets[1]);
+        mCommandList->setResourceStatesForBindingSet(resources.mBindingSetSpace0);
+        auto bindingSetSpace1 = mVirtualTextureManager.GetBindingSet(mTriangleBindingLayouts[1]);
+        mCommandList->setResourceStatesForBindingSet(bindingSetSpace1);
 
 
         // Draw Call
@@ -922,8 +919,8 @@ void Renderer2D::SubmitTriangleBatchRendering() {
         state.framebuffer = mFramebuffers[mFrameIndex % mBufferCount];
         state.viewport.addViewportAndScissorRect(
             mFramebuffers[mFrameIndex % mBufferCount]->getFramebufferInfo().getViewport());
-        state.bindings.push_back(bindingSets[0]);
-        state.bindings.push_back(bindingSets[1]);
+        state.bindings.push_back(resources.mBindingSetSpace0);
+        state.bindings.push_back(bindingSetSpace1);
 
         nvrhi::VertexBufferBinding vertexBufferBinding;
         vertexBufferBinding.buffer = resources.VertexBuffer;
@@ -1003,8 +1000,8 @@ public:
 
         mRenderer->BeginRendering(frameIndex);
 
-        const int quadCountX = 400;
-        const int quadCountY = 200;
+        const int quadCountX = 200;
+        const int quadCountY = 100;
 
         const float quadSize = 8.0f;
         const float spacing = 2.0f;

@@ -718,7 +718,7 @@ void Renderer2D::CreateResources() {
     uint32_t hardwareMax = deviceProperties.limits.maxDescriptorSetSampledImages;
 
     mBindlessTextureArraySizeMax = std::min<uint32_t>(16384u, hardwareMax);
-    mTriangleBufferInstanceSizeMax = 65536u; // should be enough for most cases
+    mTriangleBufferInstanceSizeMax = 1u << 18; // 2^18 instances
 
     mViewProjectionMatrix = {
         2.0f / static_cast<float>(mWidth), 0.0f, 0.0f, 0.0f,

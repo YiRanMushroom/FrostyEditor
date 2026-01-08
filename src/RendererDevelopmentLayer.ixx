@@ -125,8 +125,8 @@ export struct TriangleBasedInstanceRenderingData {
         float u, v;
     };
 
-    std::array<VertexPosition, 4> Vertices{};
-    bool IsQuad{};
+    std::array<VertexPosition, 4> Vertices;
+    bool IsQuad;
     int VirtualTextureID;
     uint32_t TintColor;
     int Depth;
@@ -166,12 +166,22 @@ export struct TriangleBasedInstanceRenderingData {
     }
 };
 
+static_assert(std::is_trivially_move_assignable_v<TriangleBasedInstanceRenderingData>,
+              "TriangleBasedInstanceRenderingData must be trivially move assignable");
+static_assert(std::is_trivially_destructible_v<TriangleBasedInstanceRenderingData>,
+              "TriangleBasedInstanceRenderingData must be trivially destructible");
+
 
 struct TriangleRendererSubmissionData {
     std::vector<TriangleVertexData> VertexData;
     std::vector<uint32_t> IndexData;
     std::vector<SpriteData> InstanceData;
     nvrhi::BindingSetDesc BindingSetDesc;
+
+    TriangleRendererSubmissionData() = default;
+
+    TriangleRendererSubmissionData(TriangleRendererSubmissionData&&) = default;
+    TriangleRendererSubmissionData& operator=(TriangleRendererSubmissionData&&) = default;
 
     void Clear() {
         VertexData.clear();
@@ -250,26 +260,48 @@ struct TriangleBasedRenderingCommandList {
         uint32_t bindlessTextureArraySizeMax,
         size_t triangleBufferInstanceSizeMax,
         VirtualTextureManager &vtManager) {
+        auto now = std::chrono::high_resolution_clock::now();
         // stable sort by depth, then by texture ID to minimize texture switches
         std::ranges::stable_sort(Instances, [](const auto &a, const auto &b) {
             if (a.Depth != b.Depth) return a.Depth < b.Depth;
             return a.VirtualTextureID < b.VirtualTextureID;
         });
+        auto sortEnd = std::chrono::high_resolution_clock::now();
 
         std::vector<TriangleRendererSubmissionData> submissions;
         if (Instances.empty()) return submissions;
 
+        auto lastFrameSubmissionIt = mLastFrameCache.begin();
+
         TriangleRendererSubmissionData currentSubmission;
+        if (lastFrameSubmissionIt != mLastFrameCache.end()) {
+            currentSubmission = std::move(*lastFrameSubmissionIt);
+            currentSubmission.BindingSetDesc = {};
+            currentSubmission.VertexData.clear();
+            currentSubmission.IndexData.clear();
+            currentSubmission.InstanceData.clear();
+            ++lastFrameSubmissionIt;
+        }
 
         std::unordered_map<int, uint32_t> textureIdToSlot;
         uint32_t nextTextureSlot = 0;
 
-        auto finalizeSubmission = [&]() {
+        auto finalizeSubmission = [&]() mutable {
             if (!currentSubmission.VertexData.empty()) {
                 submissions.push_back(std::move(currentSubmission));
-                currentSubmission.Clear();
                 textureIdToSlot.clear();
                 nextTextureSlot = 0;
+
+                if (lastFrameSubmissionIt == mLastFrameCache.end()) {
+                    currentSubmission.Clear();
+                } else {
+                    currentSubmission = std::move(*lastFrameSubmissionIt);
+                    currentSubmission.BindingSetDesc = {};
+                    currentSubmission.VertexData.clear();
+                    currentSubmission.IndexData.clear();
+                    currentSubmission.InstanceData.clear();
+                    ++lastFrameSubmissionIt;
+                }
             }
         };
 
@@ -350,7 +382,24 @@ struct TriangleBasedRenderingCommandList {
 
         finalizeSubmission();
 
+        auto recordEnd = std::chrono::high_resolution_clock::now();
+        ImGui::Begin("TriangleBasedRenderingCommandList Profiling");
+        ImGui::Text("Sorting Time: %.3f ms",
+                    std::chrono::duration<float, std::milli>(sortEnd - now).count());
+        ImGui::Text("Recording Time: %.3f ms",
+                    std::chrono::duration<float, std::milli>(recordEnd - sortEnd).count());
+        ImGui::End();
+
         return submissions;
+    }
+
+private:
+    std::vector<TriangleRendererSubmissionData> mLastFrameCache;
+
+public:
+    void GiveBackForNextFrame(std::vector<TriangleRendererSubmissionData> &&thisCache) {
+        mLastFrameCache = std::move(thisCache);
+        mLastFrameCache.resize(0);
     }
 };
 
@@ -683,7 +732,7 @@ void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
         vertexBufferDesc.byteSize = sizeof(TriangleVertexData) * mTriangleBufferInstanceSizeMax * 4;
         vertexBufferDesc.isVertexBuffer = true;
         vertexBufferDesc.debugName = "Renderer2D::TriangleVertexBuffer";
-        vertexBufferDesc.initialState = nvrhi::ResourceStates::VertexBuffer | nvrhi::ResourceStates::ShaderResource;
+        vertexBufferDesc.initialState = nvrhi::ResourceStates::VertexBuffer;
         vertexBufferDesc.keepInitialState = true;
         resources.VertexBuffer = mDevice->createBuffer(vertexBufferDesc);
 
@@ -691,7 +740,7 @@ void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
         indexBufferDesc.byteSize = sizeof(uint32_t) * mTriangleBufferInstanceSizeMax * 6;
         indexBufferDesc.isIndexBuffer = true;
         indexBufferDesc.debugName = "Renderer2D::TriangleIndexBuffer";
-        indexBufferDesc.initialState = nvrhi::ResourceStates::IndexBuffer | nvrhi::ResourceStates::ShaderResource;
+        indexBufferDesc.initialState = nvrhi::ResourceStates::IndexBuffer;
         indexBufferDesc.keepInitialState = true;
         resources.IndexBuffer = mDevice->createBuffer(indexBufferDesc);
 
@@ -887,6 +936,8 @@ void Renderer2D::SubmitTriangleBatchRendering() {
 
         mCommandList->drawIndexed(drawArgs);
     }
+
+    mTriangleCommandList.GiveBackForNextFrame(std::move(submissions));
 }
 
 void Renderer2D::Submit() {
@@ -940,60 +991,43 @@ public:
                           const nvrhi::FramebufferHandle &framebuffer, uint32_t frameIndex) override {
         mRenderer->BeginRendering(frameIndex);
 
-        mRenderer->DrawTriangleColored(
-            {50.f, 50.f}, // v0
-            {150.f, 50.f}, // v1
-            {100.f, 150.f}, // v2
-            nvrhi::Color(1.0f, 0.0f, 0.0f, 1.0f)
-        );
+        const int quadCountX = 400;
+        const int quadCountY = 200;
 
-        mRenderer->DrawQuadColored(
-            {400.f, 300.f}, // TL
-            {600.f, 300.f}, // TR
-            {600.f, 500.f}, // BR
-            {400.f, 500.f}, // BL
-            nvrhi::Color(0.0f, 0.0f, 1.0f, 1.0f)
-        );
+        const float quadSize = 8.0f;
+        const float spacing = 2.0f;
 
-        mRenderer->SetCurrentDepth(0);
-        mRenderer->DrawQuadColored({700.f, 100.f}, {900.f, 100.f}, {900.f, 300.f}, {700.f, 300.f},
-                                   nvrhi::Color(0.0f, 1.0f, 0.0f, 1.0f));
-
-        mRenderer->SetCurrentDepth(1);
-        mRenderer->DrawQuadColored({750.f, 150.f}, {950.f, 150.f}, {950.f, 350.f}, {750.f, 350.f},
-                                   nvrhi::Color(1.0f, 1.0f, 0.0f, 1.0f));
-
-        // now we test textures
         uint32_t texIdRed = mRenderer->RegisterVirtualTextureForThisFrame(mRedTextureHandle);
         uint32_t texIdGreen = mRenderer->RegisterVirtualTextureForThisFrame(mGreenTextureHandle);
         uint32_t texIdBlue = mRenderer->RegisterVirtualTextureForThisFrame(mBlueTextureHandle);
 
-        mRenderer->DrawQuadTextureVirtual(
-            {100.f, 400.f}, // TL
-            {200.f, 400.f}, // TR
-            {200.f, 500.f}, // BR
-            {100.f, 500.f}, // BL
-            {0.f, 0.f}, {1.f, 0.f}, {1.f, 1.f}, {0.f, 1.f},
-            texIdRed
-        );
+        for (int y = 0; y < quadCountY; ++y) {
+            for (int x = 0; x < quadCountX; ++x) {
+                float px = 50.0f + x * (quadSize + spacing);
+                float py = 50.0f + y * (quadSize + spacing);
 
-        mRenderer->DrawQuadTextureVirtual(
-            {250.f, 400.f}, // TL
-            {350.f, 400.f}, // TR
-            {350.f, 500.f}, // BR
-            {250.f, 500.f}, // BL
-            {0.f, 0.f}, {1.f, 0.f}, {1.f, 1.f}, {0.f, 1.f},
-            texIdGreen
-        );
+                mRenderer->SetCurrentDepth((x + y) & 1);
 
-        mRenderer->DrawQuadTextureVirtual(
-            {400.f, 400.f}, // TL
-            {500.f, 400.f}, // TR
-            {500.f, 500.f}, // BR
-            {400.f, 500.f}, // BL
-            {0.f, 0.f}, {1.f, 0.f}, {1.f, 1.f}, {0.f, 1.f},
-            texIdBlue
-        );
+                uint32_t texId;
+                switch ((x + y) % 3) {
+                    case 0: texId = texIdRed;
+                        break;
+                    case 1: texId = texIdGreen;
+                        break;
+                    default: texId = texIdBlue;
+                        break;
+                }
+
+                mRenderer->DrawQuadTextureVirtual(
+                    {px, py},
+                    {px + quadSize, py},
+                    {px + quadSize, py + quadSize},
+                    {px, py + quadSize},
+                    {0.f, 0.f}, {1.f, 0.f}, {1.f, 1.f}, {0.f, 1.f},
+                    texId
+                );
+            }
+        }
 
         mRenderer->EndRendering();
 
@@ -1002,8 +1036,8 @@ public:
     }
 
     virtual bool OnEvent(const Event &event) override {
-        if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED
-         && event.window.windowID  == SDL_GetWindowID(mApp->GetWindow().get())
+        if ((event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+            && event.window.windowID == SDL_GetWindowID(mApp->GetWindow().get())
         ) {
             int width = 0, height = 0;
             SDL_GetWindowSize(SDL_GetWindowFromID(event.window.windowID), &width, &height);

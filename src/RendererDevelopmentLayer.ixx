@@ -223,10 +223,10 @@ export struct TriangleRenderingData {
     int Depth;
 
     static TriangleRenderingData Triangle(const glm::vec2 &p0, const glm::vec2 &uv0,
-                                                       const glm::vec2 &p1, const glm::vec2 &uv1,
-                                                       const glm::vec2 &p2, const glm::vec2 &uv2,
-                                                       int textureIndex,
-                                                       uint32_t tintColor, int depth = 0) {
+                                          const glm::vec2 &p1, const glm::vec2 &uv1,
+                                          const glm::vec2 &p2, const glm::vec2 &uv2,
+                                          int textureIndex,
+                                          uint32_t tintColor, int depth = 0) {
         TriangleRenderingData data;
         data.Positions[0] = p0;
         data.Positions[1] = p1;
@@ -242,11 +242,11 @@ export struct TriangleRenderingData {
     }
 
     static TriangleRenderingData Quad(const glm::vec2 &p0, const glm::vec2 &uv0,
-                                                   const glm::vec2 &p1, const glm::vec2 &uv1,
-                                                   const glm::vec2 &p2, const glm::vec2 &uv2,
-                                                   const glm::vec2 &p3, const glm::vec2 &uv3,
-                                                   int virtualTextureID,
-                                                   uint32_t tintColor, int depth = 0) {
+                                      const glm::vec2 &p1, const glm::vec2 &uv1,
+                                      const glm::vec2 &p2, const glm::vec2 &uv2,
+                                      const glm::vec2 &p3, const glm::vec2 &uv3,
+                                      int virtualTextureID,
+                                      uint32_t tintColor, int depth = 0) {
         TriangleRenderingData data;
         data.Positions[0] = p0;
         data.Positions[1] = p1;
@@ -445,7 +445,7 @@ struct TriangleBatchRenderingResources {
 
 struct LineVertexData {
     glm::vec2 position;
-    glm::u8vec4 color;
+    uint32_t color;
 };
 
 struct LineRenderingSubmissionData {
@@ -463,16 +463,20 @@ struct LineRenderingCommandList {
         VertexData.clear();
     }
 
+
     void AddLine(const glm::vec2 &p0, const glm::u8vec4 &color0,
                  const glm::vec2 &p1, const glm::u8vec4 &color1) {
         VertexData.resize(VertexData.size() + 2);
         LineVertexData *v0 = &VertexData[VertexData.size() - 2];
         v0->position = p0;
-        v0->color = color0;
+
+        v0->color = (color0.r << 24) | (color0.g << 16) | (color0.b << 8) | color0.a;
+
         LineVertexData *v1 = &VertexData[VertexData.size() - 1];
         v1->position = p1;
-        v1->color = color1;
+        v1->color = (color1.r << 24) | (color1.g << 16) | (color1.b << 8) | color1.a;
     }
+
 
     std::vector<LineRenderingSubmissionData> RecordRendererSubmissionData(size_t lineBufferInstanceSizeMax) {
         auto now = std::chrono::high_resolution_clock::now();
@@ -516,6 +520,8 @@ struct LineRenderingCommandList {
         finalizeSubmission();
 
         auto recordEnd = std::chrono::high_resolution_clock::now();
+        ImGui::Text("Line Count: %zu lines (%zu vertices)", VertexData.size() / 2, VertexData.size());
+        ImGui::Text("Line Submissions: %zu", submissions.size());
         ImGui::Text("Line Recording Time: %.3f ms",
                     std::chrono::duration<float, std::milli>(recordEnd - now).count());
         return submissions;
@@ -529,6 +535,11 @@ public:
         mLastFrameCache = std::move(thisCache);
         mLastFrameCache.resize(0);
     }
+};
+
+struct LineBatchRenderingResources {
+    nvrhi::BufferHandle VertexBuffer;
+    nvrhi::BindingSetHandle mBindingSetSpace0;
 };
 
 #pragma endregion
@@ -559,6 +570,7 @@ public:
 
     void Clear() {
         mTriangleCommandList.Clear();
+        mLineCommandList.Clear();
     }
 
     [[nodiscard]] int GetCurrentDepth() const { return mCurrentDepth; }
@@ -567,9 +579,6 @@ public:
     uint32_t RegisterVirtualTextureForThisFrame(const nvrhi::TextureHandle &texture) {
         return mVirtualTextureManager.RegisterTexture(texture);
     }
-
-private:
-    static uint32_t ToRGBAUInt32(const nvrhi::Color &color);
 
 private:
     nvrhi::DeviceHandle mDevice;
@@ -601,10 +610,19 @@ private:
     std::vector<TriangleBatchRenderingResources> mTriangleBatchRenderingResources;
 
     // We also want to rendering lines
+    LineRenderingCommandList mLineCommandList;
+    nvrhi::InputLayoutHandle mLineInputLayout;
+    nvrhi::GraphicsPipelineHandle mLinePipeline;
+    nvrhi::BindingLayoutHandle mLineBindingLayoutSpace0;
+    nvrhi::BufferHandle mLineConstantBuffer;
+    size_t mLineBufferVertexSizeMax;
+    std::vector<LineBatchRenderingResources> mLineBatchRenderingResources;
 
     void CreateResources();
 
     void CreateTriangleBatchRenderingResources(size_t count);
+
+    void CreateLineBatchRenderingResources(size_t count);
 
     void CreatePipelines();
 
@@ -612,7 +630,11 @@ private:
 
     void CreatePipelineTriangle();
 
+    void CreatePipelineLine();
+
     void SubmitTriangleBatchRendering();
+
+    void SubmitLineBatchRendering();
 
     void Submit();
 
@@ -632,7 +654,7 @@ public:
             positions[1], glm::vec2(0.f, 0.f),
             positions[2], glm::vec2(0.f, 0.f),
             -1,
-            color.r | (color.g << 8) | (color.b << 16) | (color.a << 24),
+            (color.r << 24) | (color.g << 16) | (color.b << 8) | color.a,
             overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
     }
 
@@ -646,7 +668,7 @@ public:
             positions[1], uvs[1],
             positions[2], uvs[2],
             static_cast<int>(virtualTextureID),
-            tintColor.r | (tintColor.g << 8) | (tintColor.b << 16) | (tintColor.a << 24),
+            (tintColor.r << 24) | (tintColor.g << 16) | (tintColor.b << 8) | tintColor.a,
             overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
     }
 
@@ -661,7 +683,7 @@ public:
             positions[1], uvs[1],
             positions[2], uvs[2],
             static_cast<int>(virtualTextureID),
-            tintColor.r | (tintColor.g << 8) | (tintColor.b << 16) | (tintColor.a << 24),
+            (tintColor.r << 24) | (tintColor.g << 16) | (tintColor.b << 8) | tintColor.a,
             overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
         return virtualTextureID;
     }
@@ -675,7 +697,7 @@ public:
             positions[2], glm::vec2(0.f, 0.f),
             positions[3], glm::vec2(0.f, 0.f),
             -1,
-            color.r | (color.g << 8) | (color.b << 16) | (color.a << 24),
+            (color.r << 24) | (color.g << 16) | (color.b << 8) | color.a,
             overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
     }
 
@@ -690,7 +712,7 @@ public:
             positions[2], uvs[2],
             positions[3], uvs[3],
             static_cast<int>(virtualTextureID),
-            tintColor.r | (tintColor.g << 8) | (tintColor.b << 16) | (tintColor.a << 24),
+            (tintColor.r << 24) | (tintColor.g << 16) | (tintColor.b << 8) | tintColor.a,
             overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
     }
 
@@ -706,14 +728,25 @@ public:
             positions[2], uvs[2],
             positions[3], uvs[3],
             static_cast<int>(virtualTextureID),
-            tintColor.r | (tintColor.g << 8) | (tintColor.b << 16) | (tintColor.a << 24),
+            (tintColor.r << 24) | (tintColor.g << 16) | (tintColor.b << 8) | tintColor.a,
             overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
         return virtualTextureID;
+    }
+
+    inline void DrawLine(const glm::vec2 &p0, const glm::vec2 &p1,
+                         const glm::u8vec4 &color) {
+        mLineCommandList.AddLine(p0, color, p1, color);
+    }
+
+    inline void DrawLine(const glm::vec2 &p0, const glm::vec2 &p1,
+                         const glm::u8vec4 &color0, const glm::u8vec4 &color1) {
+        mLineCommandList.AddLine(p0, color0, p1, color1);
     }
 };
 
 void Renderer2D::CreatePipelineResources() {
     CreateTriangleBatchRenderingResources(4); // this should be enough for most cases, if not we can always expand it
+    CreateLineBatchRenderingResources(4); // same for lines
 }
 
 void Renderer2D::BeginRendering() {
@@ -785,6 +818,7 @@ void Renderer2D::CreateResources() {
 
     mBindlessTextureArraySizeMax = std::min<uint32_t>(16384u, hardwareMax);
     mTriangleBufferInstanceSizeMax = 1 << 18; // 2^18 instances
+    mLineBufferVertexSizeMax = 1 << 18; // 2^18 vertices
 }
 
 void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
@@ -830,8 +864,33 @@ void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
     }
 }
 
+void Renderer2D::CreateLineBatchRenderingResources(size_t count) {
+    if (count <= mLineBatchRenderingResources.size()) {
+        return;
+    }
+
+    for (size_t i = mLineBatchRenderingResources.size(); i < count; ++i) {
+        LineBatchRenderingResources resources;
+
+        nvrhi::BufferDesc vertexBufferDesc;
+        vertexBufferDesc.byteSize = sizeof(LineVertexData) * mLineBufferVertexSizeMax;
+        vertexBufferDesc.isVertexBuffer = true;
+        vertexBufferDesc.debugName = "Renderer2D::LineVertexBuffer";
+        vertexBufferDesc.initialState = nvrhi::ResourceStates::VertexBuffer;
+        vertexBufferDesc.keepInitialState = true;
+        resources.VertexBuffer = mDevice->createBuffer(vertexBufferDesc);
+
+        nvrhi::BindingSetDesc bindingSetDesc;
+        bindingSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, mLineConstantBuffer));
+        resources.mBindingSetSpace0 = mDevice->createBindingSet(bindingSetDesc, mLineBindingLayoutSpace0);
+
+        mLineBatchRenderingResources.push_back(resources);
+    }
+}
+
 void Renderer2D::CreatePipelines() {
     CreatePipelineTriangle();
+    CreatePipelineLine();
 }
 
 void Renderer2D::CreateConstantBuffers() {
@@ -843,6 +902,15 @@ void Renderer2D::CreateConstantBuffers() {
                                            nvrhi::ResourceStates::ConstantBuffer;
     constBufferVPMatrixDesc.keepInitialState = true;
     mTriangleConstantBuffer = mDevice->createBuffer(constBufferVPMatrixDesc);
+
+    nvrhi::BufferDesc constBufferLineDesc;
+    constBufferLineDesc.byteSize = sizeof(glm::mat4);
+    constBufferLineDesc.isConstantBuffer = true;
+    constBufferLineDesc.debugName = "Renderer2D::LineConstantBufferVPMatrix";
+    constBufferLineDesc.initialState = nvrhi::ResourceStates::ShaderResource |
+                                       nvrhi::ResourceStates::ConstantBuffer;
+    constBufferLineDesc.keepInitialState = true;
+    mLineConstantBuffer = mDevice->createBuffer(constBufferLineDesc);
 }
 
 void Renderer2D::CreatePipelineTriangle() {
@@ -920,6 +988,66 @@ void Renderer2D::CreatePipelineTriangle() {
     mTrianglePipeline = mDevice->createGraphicsPipeline(pipeDesc, mFramebuffer->getFramebufferInfo());
 }
 
+void Renderer2D::CreatePipelineLine() {
+    nvrhi::ShaderDesc vsDesc;
+    vsDesc.shaderType = nvrhi::ShaderType::Vertex;
+    vsDesc.entryName = "main";
+    nvrhi::ShaderHandle vs = mDevice->createShader(vsDesc,
+                                                   GeneratedShaders::renderer2d_line_vs.data(),
+                                                   GeneratedShaders::renderer2d_line_vs.size());
+
+    nvrhi::ShaderDesc psDesc;
+    psDesc.shaderType = nvrhi::ShaderType::Pixel;
+    psDesc.entryName = "main";
+    nvrhi::ShaderHandle ps = mDevice->createShader(psDesc,
+                                                   GeneratedShaders::renderer2d_line_ps.data(),
+                                                   GeneratedShaders::renderer2d_line_ps.size());
+
+    nvrhi::VertexAttributeDesc posAttrs[2];
+    posAttrs[0].name = "POSITION";
+    posAttrs[0].format = nvrhi::Format::RG32_FLOAT;
+    posAttrs[0].bufferIndex = 0;
+    posAttrs[0].offset = offsetof(LineVertexData, position);
+    posAttrs[0].elementStride = sizeof(LineVertexData);
+
+    posAttrs[1].name = "COLOR";
+    posAttrs[1].format = nvrhi::Format::R32_UINT;
+    posAttrs[1].bufferIndex = 0;
+    posAttrs[1].offset = offsetof(LineVertexData, color);
+    posAttrs[1].elementStride = sizeof(LineVertexData);
+
+    mLineInputLayout = mDevice->createInputLayout(posAttrs, 2, vs);
+
+    nvrhi::BindingLayoutDesc bindingLayoutDesc;
+    bindingLayoutDesc.visibility = nvrhi::ShaderType::Vertex;
+    bindingLayoutDesc.bindings = {
+        nvrhi::BindingLayoutItem::ConstantBuffer(0)
+    };
+
+    mLineBindingLayoutSpace0 = mDevice->createBindingLayout(bindingLayoutDesc);
+
+    nvrhi::GraphicsPipelineDesc pipeDesc;
+    pipeDesc.VS = vs;
+    pipeDesc.PS = ps;
+    pipeDesc.inputLayout = mLineInputLayout;
+    pipeDesc.bindingLayouts = {
+        mLineBindingLayoutSpace0
+    };
+
+    pipeDesc.primType = nvrhi::PrimitiveType::LineList;
+
+    pipeDesc.renderState.blendState.targets[0].blendEnable = true;
+    pipeDesc.renderState.blendState.targets[0].srcBlend = nvrhi::BlendFactor::SrcAlpha;
+    pipeDesc.renderState.blendState.targets[0].destBlend = nvrhi::BlendFactor::InvSrcAlpha;
+    pipeDesc.renderState.blendState.targets[0].srcBlendAlpha = nvrhi::BlendFactor::One;
+    pipeDesc.renderState.blendState.targets[0].destBlendAlpha = nvrhi::BlendFactor::InvSrcAlpha;
+    pipeDesc.renderState.blendState.targets[0].colorWriteMask = nvrhi::ColorMask::All;
+    pipeDesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
+    pipeDesc.renderState.depthStencilState.depthTestEnable = false;
+
+    mLinePipeline = mDevice->createGraphicsPipeline(pipeDesc, mFramebuffer->getFramebufferInfo());
+}
+
 void Renderer2D::SubmitTriangleBatchRendering() {
     auto submissions = mTriangleCommandList.RecordRendererSubmissionData(
         mTriangleBufferInstanceSizeMax);
@@ -989,8 +1117,63 @@ void Renderer2D::SubmitTriangleBatchRendering() {
     mTriangleCommandList.GiveBackForNextFrame(std::move(submissions));
 }
 
+void Renderer2D::SubmitLineBatchRendering() {
+    auto submissions = mLineCommandList.RecordRendererSubmissionData(
+        mLineBufferVertexSizeMax);
+
+    if (submissions.empty()) {
+        return;
+    }
+
+    CreateLineBatchRenderingResources(submissions.size());
+
+    // submit constant buffer
+    mCommandList->writeBuffer(mLineConstantBuffer, &mViewProjectionMatrix,
+                              sizeof(glm::mat4), 0);
+
+    for (size_t i = 0; i < submissions.size(); ++i) {
+        auto &submission = submissions[i];
+        auto &resources = mLineBatchRenderingResources[i];
+
+        // Update Buffers
+        if (!submission.VertexData.empty()) {
+            mCommandList->writeBuffer(resources.VertexBuffer, submission.VertexData.data(),
+                                      sizeof(LineVertexData) * submission.VertexData.size(), 0);
+        } else {
+            continue;
+        }
+
+        mCommandList->setResourceStatesForBindingSet(resources.mBindingSetSpace0);
+
+        // Draw Call
+        nvrhi::GraphicsState state;
+        state.pipeline = mLinePipeline;
+        state.framebuffer = mFramebuffer;
+        state.viewport.addViewportAndScissorRect(
+            mFramebuffer->getFramebufferInfo().getViewport());
+        state.bindings.push_back(resources.mBindingSetSpace0);
+
+        nvrhi::VertexBufferBinding vertexBufferBinding;
+        vertexBufferBinding.buffer = resources.VertexBuffer;
+        vertexBufferBinding.offset = 0;
+        vertexBufferBinding.slot = 0;
+
+        state.vertexBuffers.push_back(vertexBufferBinding);
+
+        mCommandList->setGraphicsState(state);
+
+        nvrhi::DrawArguments drawArgs;
+        drawArgs.vertexCount = static_cast<uint32_t>(submission.VertexData.size());
+
+        mCommandList->draw(drawArgs);
+    }
+
+    mLineCommandList.GiveBackForNextFrame(std::move(submissions));
+}
+
 void Renderer2D::Submit() {
     SubmitTriangleBatchRendering();
+    SubmitLineBatchRendering();
 }
 
 void Renderer2D::RecalculateViewProjectionMatrix() {
@@ -1074,45 +1257,83 @@ public:
         uint32_t texIdGreen = mRenderer->RegisterVirtualTextureForThisFrame(mGreenTextureHandle);
         uint32_t texIdBlue = mRenderer->RegisterVirtualTextureForThisFrame(mBlueTextureHandle);
 
-        for (int y = -quadCountHalfY; y <= quadCountHalfY; ++y) {
-            for (int x = -quadCountHalfX; x <= quadCountHalfX; ++x) {
-                float posX = x * (quadSize + spacing);
-                float posY = y * (quadSize + spacing);
+        // for (int y = -quadCountHalfY; y <= quadCountHalfY; ++y) {
+        //     for (int x = -quadCountHalfX; x <= quadCountHalfX; ++x) {
+        //         float posX = x * (quadSize + spacing);
+        //         float posY = y * (quadSize + spacing);
+        //
+        //         glm::u8vec4 tintColor;
+        //         uint32_t texId = texIdRed;
+        //
+        //         int modResult = ((x + y) % 3 + 3) % 3;
+        //
+        //         if (modResult == 0) {
+        //             texId = texIdRed;
+        //             tintColor = glm::u8vec4(255, 255, 255, 127);
+        //         } else if (modResult == 1) {
+        //             texId = texIdGreen;
+        //             tintColor = glm::u8vec4(255, 255, 255, 127);
+        //         } else {
+        //             texId = texIdBlue;
+        //             tintColor = glm::u8vec4(255, 128, 255, 127);
+        //         }
+        //         mRenderer->DrawQuadTextureVirtual(
+        //             glm::mat4x2(
+        //                 posX, posY,
+        //                 posX + quadSize, posY,
+        //                 posX + quadSize, posY + quadSize,
+        //                 posX, posY + quadSize
+        //             ),
+        //             glm::mat4x2(
+        //                 0.f, 0.f,
+        //                 1.f, 0.f,
+        //                 1.f, 1.f,
+        //                 0.f, 1.f
+        //             ),
+        //             texId,
+        //             std::nullopt,
+        //             tintColor
+        //         );
+        //     }
+        // }
 
-                glm::u8vec4 tintColor;
-                uint32_t texId = texIdRed;
+        // Test line rendering
+        // Draw RED horizontal line at top
+        mRenderer->DrawLine(
+            glm::vec2(-800.0f, -400.0f),
+            glm::vec2(-400.0f, 0.0f),
+            glm::u8vec4(255, 0, 0, 255)
+        );
 
-                int modResult = ((x + y) % 3 + 3) % 3;
+        mRenderer->DrawLine(
+            glm::vec2(-400.0f, -400.0f),
+            glm::vec2(0.0f, 0.0f),
+            glm::u8vec4(0, 255, 0, 255)
+        );
 
-                if (modResult == 0) {
-                    texId = texIdRed;
-                    tintColor = glm::u8vec4(255, 255, 255, 127);
-                } else if (modResult == 1) {
-                    texId = texIdGreen;
-                    tintColor = glm::u8vec4(255, 255, 255, 127);
-                } else {
-                    texId = texIdBlue;
-                    tintColor = glm::u8vec4(255, 128, 255, 127);
-                }
-                mRenderer->DrawQuadTextureVirtual(
-                    glm::mat4x2(
-                        posX, posY,
-                        posX + quadSize, posY,
-                        posX + quadSize, posY + quadSize,
-                        posX, posY + quadSize
-                    ),
-                    glm::mat4x2(
-                        0.f, 0.f,
-                        1.f, 0.f,
-                        1.f, 1.f,
-                        0.f, 1.f
-                    ),
-                    texId,
-                    std::nullopt,
-                    tintColor
-                );
-            }
-        }
+        mRenderer->DrawLine(
+            glm::vec2(0.0f, -400.0f),
+            glm::vec2(400.0f, 0.0f),
+            glm::u8vec4(0, 0, 255, 255)
+        );
+
+        mRenderer->DrawLine(
+            glm::vec2(400.0f, -400.0f),
+            glm::vec2(800.0f, 0.0f),
+            glm::u8vec4(255, 255, 0, 255)
+        );
+
+        mRenderer->DrawLine(
+            glm::vec2(-800.0f, 0.0f),
+            glm::vec2(-400.0f, 400.0f),
+            glm::u8vec4(0, 255, 255, 255)
+        );
+
+        mRenderer->DrawLine(
+            glm::vec2(400.0f, 0.0f),
+            glm::vec2(800.0f, 400.0f),
+            glm::u8vec4(255, 0, 255, 255)
+        );
 
         mRenderer->EndRendering();
 

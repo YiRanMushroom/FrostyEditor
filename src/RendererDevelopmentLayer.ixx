@@ -18,12 +18,6 @@ import Render.FramebufferPresenter;
 import Render.VirtualTextureManager;
 import Render.Renderer2D;
 
-import <cassert>;
-import <cstddef>;
-
-import glm;
-import "glm/gtx/transform.hpp";
-
 using namespace Engine;
 
 export class RendererDevelopmentLayer : public Layer {
@@ -78,124 +72,75 @@ public:
 
         mRenderer->BeginRendering();
 
-        const int quadCountHalfX = 150;
-        const int quadCountHalfY = 100;
-
-        const float quadSize = 5.0f;
-        const float spacing = 0.0f;
-
         uint32_t texIdRed = mRenderer->RegisterVirtualTextureForThisFrame(mRedTextureHandle);
         uint32_t texIdGreen = mRenderer->RegisterVirtualTextureForThisFrame(mGreenTextureHandle);
         uint32_t texIdBlue = mRenderer->RegisterVirtualTextureForThisFrame(mBlueTextureHandle);
 
-        // for (int y = -quadCountHalfY; y <= quadCountHalfY; ++y) {
-        //     for (int x = -quadCountHalfX; x <= quadCountHalfX; ++x) {
-        //         float posX = x * (quadSize + spacing);
-        //         float posY = y * (quadSize + spacing);
-        //
-        //         glm::u8vec4 tintColor;
-        //         uint32_t texId = texIdRed;
-        //
-        //         int modResult = ((x + y) % 3 + 3) % 3;
-        //
-        //         if (modResult == 0) {
-        //             texId = texIdRed;
-        //             tintColor = glm::u8vec4(255, 255, 255, 127);
-        //         } else if (modResult == 1) {
-        //             texId = texIdGreen;
-        //             tintColor = glm::u8vec4(255, 255, 255, 127);
-        //         } else {
-        //             texId = texIdBlue;
-        //             tintColor = glm::u8vec4(255, 128, 255, 127);
-        //         }
-        //         mRenderer->DrawQuadTextureVirtual(
-        //             glm::mat4x2(
-        //                 posX, posY,
-        //                 posX + quadSize, posY,
-        //                 posX + quadSize, posY + quadSize,
-        //                 posX, posY + quadSize
-        //             ),
-        //             glm::mat4x2(
-        //                 0.f, 0.f,
-        //                 1.f, 0.f,
-        //                 1.f, 1.f,
-        //                 0.f, 1.f
-        //             ),
-        //             texId,
-        //             std::nullopt,
-        //             tintColor
-        //         );
-        //     }
-        // }
+        // Test Triangle commands (Top row, left side)
+        // Colored triangle
+        mRenderer->DrawTriangleColored(
+            glm::mat3x2(-850.0f, -350.0f, -750.0f, -350.0f, -800.0f, -250.0f),
+            glm::u8vec4(255, 0, 0, 255)
+        );
 
-        // Test line rendering (commented out for circle tests)
-        // mRenderer->DrawLine(
-        //     glm::vec2(-800.0f, -400.0f),
-        //     glm::vec2(-400.0f, 0.0f),
-        //     glm::u8vec4(255, 0, 0, 255)
-        // );
-        //
-        // mRenderer->DrawLine(
-        //     glm::vec2(-400.0f, -400.0f),
-        //     glm::vec2(0.0f, 0.0f),
-        //     glm::u8vec4(0, 255, 0, 255)
-        // );
-        //
-        // mRenderer->DrawLine(
-        //     glm::vec2(0.0f, -400.0f),
-        //     glm::vec2(400.0f, 0.0f),
-        //     glm::u8vec4(0, 0, 255, 255)
-        // );
-        //
-        // mRenderer->DrawLine(
-        //     glm::vec2(400.0f, -400.0f),
-        //     glm::vec2(800.0f, 0.0f),
-        //     glm::u8vec4(255, 255, 0, 255)
-        // );
-        //
-        // mRenderer->DrawLine(
-        //     glm::vec2(-800.0f, 0.0f),
-        //     glm::vec2(-400.0f, 400.0f),
-        //     glm::u8vec4(0, 255, 255, 255)
-        // );
-        //
-        // mRenderer->DrawLine(
-        //     glm::vec2(400.0f, 0.0f),
-        //     glm::vec2(800.0f, 400.0f),
-        //     glm::u8vec4(255, 0, 255, 255)
-        // );
+        // Textured triangle with virtual texture
+        mRenderer->DrawTriangleTextureVirtual(
+            glm::mat3x2(-650.0f, -350.0f, -550.0f, -350.0f, -600.0f, -250.0f),
+            glm::mat3x2(0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 1.0f),
+            texIdRed
+        );
 
-        // Test circle/ellipse rendering
-        // Basic solid circles
-        mRenderer->DrawCircle(glm::vec2(-400.0f, -200.0f), 80.0f, glm::u8vec4(255, 0, 0, 255));
-        mRenderer->DrawCircle(glm::vec2(-200.0f, -200.0f), 60.0f, glm::u8vec4(0, 255, 0, 255));
-        mRenderer->DrawCircle(glm::vec2(0.0f, -200.0f), 70.0f, glm::u8vec4(0, 0, 255, 255));
-        mRenderer->DrawCircle(glm::vec2(200.0f, -200.0f), 50.0f, glm::u8vec4(255, 255, 0, 255));
+        // Test Quad commands (Top row, center-left)
+        // Colored quad
+        mRenderer->DrawQuadColored(
+            glm::mat4x2(-450.0f, -350.0f, -350.0f, -350.0f, -350.0f, -250.0f, -450.0f, -250.0f),
+            glm::u8vec4(0, 255, 0, 255)
+        );
 
-        // Circles with transparency
-        mRenderer->DrawCircle(glm::vec2(-300.0f, 0.0f), 90.0f, glm::u8vec4(255, 0, 255, 128));
-        mRenderer->DrawCircle(glm::vec2(-100.0f, 0.0f), 85.0f, glm::u8vec4(0, 255, 255, 128));
+        // Textured quad with virtual texture
+        mRenderer->DrawQuadTextureVirtual(
+            glm::mat4x2(-250.0f, -350.0f, -150.0f, -350.0f, -150.0f, -250.0f, -250.0f, -250.0f),
+            glm::mat4x2(0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f),
+            texIdGreen
+        );
 
-        // Ellipses with rotation
-        mRenderer->DrawEllipse(glm::vec2(150.0f, 0.0f), glm::vec2(100.0f, 50.0f), 0.0f,
-                              glm::u8vec4(255, 128, 0, 255));
-        mRenderer->DrawEllipse(glm::vec2(350.0f, 0.0f), glm::vec2(100.0f, 50.0f), 0.785f,
-                              glm::u8vec4(128, 0, 255, 255));
+        // Test Line commands (Top row, center-right)
+        mRenderer->DrawLine(glm::vec2(50.0f, -350.0f), glm::vec2(150.0f, -350.0f), glm::u8vec4(255, 255, 0, 255));
+        mRenderer->DrawLine(glm::vec2(50.0f, -320.0f), glm::vec2(150.0f, -260.0f),
+                          glm::u8vec4(255, 0, 0, 255), glm::u8vec4(0, 0, 255, 255));
 
-        // Rings
-        mRenderer->DrawRing(glm::vec2(-400.0f, 250.0f), 80.0f, 50.0f, glm::u8vec4(255, 0, 0, 255));
-        mRenderer->DrawRing(glm::vec2(-200.0f, 250.0f), 70.0f, 50.0f, glm::u8vec4(0, 255, 0, 255));
+        // Test Circle commands (Top row, right side)
+        mRenderer->DrawCircle(glm::vec2(350.0f, -300.0f), 50.0f, glm::u8vec4(255, 0, 255, 255));
+        mRenderer->DrawCircleTextureVirtual(glm::vec2(550.0f, -300.0f), 50.0f, texIdBlue);
 
-        // Sectors (pie slices)
-        const float PI = 3.14159265359f;
-        mRenderer->DrawSector(glm::vec2(0.0f, 250.0f), 80.0f, 0.0f, PI * 0.5f,
-                             glm::u8vec4(255, 255, 0, 255));
-        mRenderer->DrawSector(glm::vec2(200.0f, 250.0f), 80.0f, PI * 0.25f, PI * 1.25f,
+        // Test Ellipse commands (Middle row, left side)
+        mRenderer->DrawEllipse(glm::vec2(-700.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.785f,
                              glm::u8vec4(0, 255, 255, 255));
+        mRenderer->DrawEllipseTextureVirtual(glm::vec2(-500.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.0f,
+                                            texIdRed, glm::u8vec4(255, 255, 255, 200));
 
-        // Arcs (ring segments)
-        mRenderer->DrawArc(glm::vec2(400.0f, 250.0f), 80.0f, 15.0f, 0.0f, PI * 1.5f,
-                          glm::u8vec4(255, 0, 255, 255));
+        // Test Ring command (Middle row, center-left)
+        mRenderer->DrawRing(glm::vec2(-250.0f, 0.0f), 60.0f, 40.0f, glm::u8vec4(255, 128, 0, 255));
+
+        // Test Sector commands (Middle row, center)
+        mRenderer->DrawSector(glm::vec2(0.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
+                            glm::u8vec4(128, 0, 255, 255));
+        mRenderer->DrawSectorTextureVirtual(glm::vec2(200.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
+                                          texIdGreen, glm::u8vec4(255, 255, 255, 255));
+
+        // Test Arc command (Middle row, right side)
+        mRenderer->DrawArc(glm::vec2(500.0f, 0.0f), 60.0f, 12.0f, 0.0f, 4.71239f,
+                         glm::u8vec4(255, 200, 0, 255));
+
+        // Test Ellipse Sector commands (Bottom row)
+        mRenderer->DrawEllipseSector(glm::vec2(-500.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
+                                   0.0f, 3.14159f, glm::u8vec4(0, 128, 255, 255));
+        mRenderer->DrawEllipseSectorTextureVirtual(glm::vec2(-200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
+                                                 0.0f, 3.14159f, texIdRed);
+
+        // Test Ellipse Arc command (Bottom row, right side)
+        mRenderer->DrawEllipseArc(glm::vec2(200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.785f,
+                                10.0f, 0.0f, 4.71239f, glm::u8vec4(255, 100, 100, 255));
 
         mRenderer->EndRendering();
 

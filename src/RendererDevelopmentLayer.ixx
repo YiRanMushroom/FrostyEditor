@@ -108,98 +108,6 @@ private:
     }
 };
 
-export struct TriangleVertexData {
-    glm::vec2 position;
-    glm::vec2 texCoords;
-    uint32_t constantIndex;
-};
-
-export struct SpriteData {
-    uint32_t tintColor;
-    int32_t textureIndex; // if < 0, no texture
-};
-
-export struct TriangleBasedRenderingCommandList;
-
-export struct TriangleBasedInstanceRenderingData {
-    struct VertexPosition {
-        glm::vec2 position;
-        glm::vec2 texCoords;
-    };
-
-    glm::mat4x2 Positions;  // 4 vertices, each with 2 components (x, y)
-    glm::mat4x2 TexCoords;  // 4 texture coordinates, each with 2 components (u, v)
-    bool IsQuad;
-    int VirtualTextureID;
-    uint32_t TintColor;
-    int Depth;
-
-    static TriangleBasedInstanceRenderingData Triangle(const glm::vec2 &p0, const glm::vec2 &uv0,
-                                                       const glm::vec2 &p1, const glm::vec2 &uv1,
-                                                       const glm::vec2 &p2, const glm::vec2 &uv2,
-                                                       int textureIndex,
-                                                       uint32_t tintColor, int depth = 0) {
-        TriangleBasedInstanceRenderingData data;
-        data.Positions[0] = p0;
-        data.Positions[1] = p1;
-        data.Positions[2] = p2;
-        data.TexCoords[0] = uv0;
-        data.TexCoords[1] = uv1;
-        data.TexCoords[2] = uv2;
-        data.IsQuad = false;
-        data.VirtualTextureID = textureIndex;
-        data.TintColor = tintColor;
-        data.Depth = depth;
-        return data;
-    }
-
-    static TriangleBasedInstanceRenderingData Quad(const glm::vec2 &p0, const glm::vec2 &uv0,
-                                                   const glm::vec2 &p1, const glm::vec2 &uv1,
-                                                   const glm::vec2 &p2, const glm::vec2 &uv2,
-                                                   const glm::vec2 &p3, const glm::vec2 &uv3,
-                                                   int virtualTextureID,
-                                                   uint32_t tintColor, int depth = 0) {
-        TriangleBasedInstanceRenderingData data;
-        data.Positions[0] = p0;
-        data.Positions[1] = p1;
-        data.Positions[2] = p2;
-        data.Positions[3] = p3;
-        data.TexCoords[0] = uv0;
-        data.TexCoords[1] = uv1;
-        data.TexCoords[2] = uv2;
-        data.TexCoords[3] = uv3;
-        data.IsQuad = true;
-        data.VirtualTextureID = virtualTextureID;
-        data.TintColor = tintColor;
-        data.Depth = depth;
-        return data;
-    }
-};
-
-static_assert(std::is_trivially_move_assignable_v<TriangleBasedInstanceRenderingData>,
-              "TriangleBasedInstanceRenderingData must be trivially move assignable");
-static_assert(std::is_trivially_destructible_v<TriangleBasedInstanceRenderingData>,
-              "TriangleBasedInstanceRenderingData must be trivially destructible");
-
-
-struct TriangleRendererSubmissionData {
-    std::vector<TriangleVertexData> VertexData;
-    std::vector<uint32_t> IndexData;
-    std::vector<SpriteData> InstanceData;
-
-    TriangleRendererSubmissionData() = default;
-
-    TriangleRendererSubmissionData(TriangleRendererSubmissionData &&) = default;
-
-    TriangleRendererSubmissionData &operator=(TriangleRendererSubmissionData &&) = default;
-
-    void Clear() {
-        VertexData.clear();
-        IndexData.clear();
-        InstanceData.clear();
-    }
-};
-
 export class PersistentVirtualTextureManager {
 public:
     explicit PersistentVirtualTextureManager(nvrhi::IDevice *device, uint32_t initialMax = 65536)
@@ -282,8 +190,106 @@ private:
     bool mIsDirty = true;
 };
 
-struct TriangleBasedRenderingCommandList {
-    std::vector<TriangleBasedInstanceRenderingData> Instances;
+struct Renderer2DDescriptor {
+    glm::u32vec2 OutputSize;
+    glm::vec2 VirtualSize;
+    nvrhi::DeviceHandle Device;
+};
+
+#pragma region TriangleInplementationLogic
+
+export struct TriangleVertexData {
+    glm::vec2 position;
+    glm::vec2 texCoords;
+    uint32_t constantIndex;
+};
+
+export struct TriangleInstanceData {
+    uint32_t tintColor;
+    int32_t textureIndex; // if < 0, no texture
+};
+
+export struct TriangleRenderingData {
+    struct VertexPosition {
+        glm::vec2 position;
+        glm::vec2 texCoords;
+    };
+
+    glm::mat4x2 Positions; // 4 vertices, each with 2 components (x, y)
+    glm::mat4x2 TexCoords; // 4 texture coordinates, each with 2 components (u, v)
+    bool IsQuad;
+    int VirtualTextureID;
+    uint32_t TintColor;
+    int Depth;
+
+    static TriangleRenderingData Triangle(const glm::vec2 &p0, const glm::vec2 &uv0,
+                                                       const glm::vec2 &p1, const glm::vec2 &uv1,
+                                                       const glm::vec2 &p2, const glm::vec2 &uv2,
+                                                       int textureIndex,
+                                                       uint32_t tintColor, int depth = 0) {
+        TriangleRenderingData data;
+        data.Positions[0] = p0;
+        data.Positions[1] = p1;
+        data.Positions[2] = p2;
+        data.TexCoords[0] = uv0;
+        data.TexCoords[1] = uv1;
+        data.TexCoords[2] = uv2;
+        data.IsQuad = false;
+        data.VirtualTextureID = textureIndex;
+        data.TintColor = tintColor;
+        data.Depth = depth;
+        return data;
+    }
+
+    static TriangleRenderingData Quad(const glm::vec2 &p0, const glm::vec2 &uv0,
+                                                   const glm::vec2 &p1, const glm::vec2 &uv1,
+                                                   const glm::vec2 &p2, const glm::vec2 &uv2,
+                                                   const glm::vec2 &p3, const glm::vec2 &uv3,
+                                                   int virtualTextureID,
+                                                   uint32_t tintColor, int depth = 0) {
+        TriangleRenderingData data;
+        data.Positions[0] = p0;
+        data.Positions[1] = p1;
+        data.Positions[2] = p2;
+        data.Positions[3] = p3;
+        data.TexCoords[0] = uv0;
+        data.TexCoords[1] = uv1;
+        data.TexCoords[2] = uv2;
+        data.TexCoords[3] = uv3;
+        data.IsQuad = true;
+        data.VirtualTextureID = virtualTextureID;
+        data.TintColor = tintColor;
+        data.Depth = depth;
+        return data;
+    }
+};
+
+static_assert(std::is_trivially_move_assignable_v<TriangleRenderingData>,
+              "TriangleBasedInstanceRenderingData must be trivially move assignable");
+static_assert(std::is_trivially_destructible_v<TriangleRenderingData>,
+              "TriangleBasedInstanceRenderingData must be trivially destructible");
+
+
+struct TriangleRenderingSubmissionData {
+    std::vector<TriangleVertexData> VertexData;
+    std::vector<uint32_t> IndexData;
+    std::vector<TriangleInstanceData> InstanceData;
+
+    TriangleRenderingSubmissionData() = default;
+
+    TriangleRenderingSubmissionData(TriangleRenderingSubmissionData &&) = default;
+
+    TriangleRenderingSubmissionData &operator=(TriangleRenderingSubmissionData &&) = default;
+
+    void Clear() {
+        VertexData.clear();
+        IndexData.clear();
+        InstanceData.clear();
+    }
+};
+
+export struct TriangleRenderingCommandList {
+    std::vector<TriangleRenderingData> Instances;
 
     void Clear() {
         Instances.clear();
@@ -296,7 +302,7 @@ struct TriangleBasedRenderingCommandList {
                      uint32_t tintColor,
                      int depth) {
         Instances.resize(Instances.size() + 1);
-        Instances.back() = TriangleBasedInstanceRenderingData::Triangle(
+        Instances.back() = TriangleRenderingData::Triangle(
             p0, uv0, p1, uv1, p2, uv2, virtualTextureID, tintColor, depth);
     }
 
@@ -308,11 +314,11 @@ struct TriangleBasedRenderingCommandList {
                  uint32_t tintColor,
                  int depth) {
         Instances.resize(Instances.size() + 1);
-        Instances.back() = TriangleBasedInstanceRenderingData::Quad(
+        Instances.back() = TriangleRenderingData::Quad(
             p0, uv0, p1, uv1, p2, uv2, p3, uv3, virtualTextureID, tintColor, depth);
     }
 
-    std::vector<TriangleRendererSubmissionData> RecordRendererSubmissionData(
+    std::vector<TriangleRenderingSubmissionData> RecordRendererSubmissionData(
         size_t triangleBufferInstanceSizeMax) {
         auto now = std::chrono::high_resolution_clock::now();
         std::ranges::sort(Instances, [](const auto &a, const auto &b) {
@@ -321,12 +327,12 @@ struct TriangleBasedRenderingCommandList {
         });
         auto sortEnd = std::chrono::high_resolution_clock::now();
 
-        std::vector<TriangleRendererSubmissionData> submissions;
+        std::vector<TriangleRenderingSubmissionData> submissions;
         if (Instances.empty()) return submissions;
 
         auto lastFrameSubmissionIt = mLastFrameCache.begin();
 
-        TriangleRendererSubmissionData currentSubmission;
+        TriangleRenderingSubmissionData currentSubmission;
         if (lastFrameSubmissionIt != mLastFrameCache.end()) {
             currentSubmission = std::move(*lastFrameSubmissionIt);
             currentSubmission.VertexData.clear();
@@ -417,27 +423,115 @@ struct TriangleBasedRenderingCommandList {
     }
 
 private:
-    std::vector<TriangleRendererSubmissionData> mLastFrameCache;
+    std::vector<TriangleRenderingSubmissionData> mLastFrameCache;
 
 public:
-    void GiveBackForNextFrame(std::vector<TriangleRendererSubmissionData> &&thisCache) {
+    void GiveBackForNextFrame(std::vector<TriangleRenderingSubmissionData> &&thisCache) {
         mLastFrameCache = std::move(thisCache);
         mLastFrameCache.resize(0);
     }
 };
 
-struct BatchRenderingResources {
+struct TriangleBatchRenderingResources {
     nvrhi::BufferHandle VertexBuffer;
     nvrhi::BufferHandle IndexBuffer;
     nvrhi::BufferHandle InstanceBuffer;
     nvrhi::BindingSetHandle mBindingSetSpace0;
 };
 
-struct Renderer2DDescriptor {
-    glm::u32vec2 OutputSize;
-    glm::vec2 VirtualSize;
-    nvrhi::DeviceHandle Device;
+#pragma endregion
+
+#pragma region LineInplementationLogic
+
+struct LineVertexData {
+    glm::vec2 position;
+    glm::u8vec4 color;
 };
+
+struct LineRenderingSubmissionData {
+    std::vector<LineVertexData> VertexData;
+
+    void Clear() {
+        VertexData.clear();
+    }
+};
+
+struct LineRenderingCommandList {
+    std::vector<LineVertexData> VertexData;
+
+    void Clear() {
+        VertexData.clear();
+    }
+
+    void AddLine(const glm::vec2 &p0, const glm::u8vec4 &color0,
+                 const glm::vec2 &p1, const glm::u8vec4 &color1) {
+        VertexData.resize(VertexData.size() + 2);
+        LineVertexData *v0 = &VertexData[VertexData.size() - 2];
+        v0->position = p0;
+        v0->color = color0;
+        LineVertexData *v1 = &VertexData[VertexData.size() - 1];
+        v1->position = p1;
+        v1->color = color1;
+    }
+
+    std::vector<LineRenderingSubmissionData> RecordRendererSubmissionData(size_t lineBufferInstanceSizeMax) {
+        auto now = std::chrono::high_resolution_clock::now();
+
+        std::vector<LineRenderingSubmissionData> submissions;
+        if (VertexData.empty()) return submissions;
+
+        auto lastFrameSubmissionIt = mLastFrameCache.begin();
+
+        LineRenderingSubmissionData currentSubmission;
+        if (lastFrameSubmissionIt != mLastFrameCache.end()) {
+            currentSubmission = std::move(*lastFrameSubmissionIt);
+            currentSubmission.VertexData.clear();
+            ++lastFrameSubmissionIt;
+        }
+
+        auto finalizeSubmission = [&]() mutable {
+            if (!currentSubmission.VertexData.empty()) {
+                submissions.push_back(std::move(currentSubmission));
+
+                if (lastFrameSubmissionIt == mLastFrameCache.end()) {
+                    currentSubmission.Clear();
+                } else {
+                    currentSubmission = std::move(*lastFrameSubmissionIt);
+                    currentSubmission.VertexData.clear();
+                    ++lastFrameSubmissionIt;
+                }
+            }
+        };
+
+        for (const auto &vertex: VertexData) {
+            // check if we need to finalize due to vertex buffer size
+            if (currentSubmission.VertexData.size() + 1 >
+                lineBufferInstanceSizeMax) {
+                finalizeSubmission();
+            }
+
+            currentSubmission.VertexData.push_back(vertex);
+        }
+
+        finalizeSubmission();
+
+        auto recordEnd = std::chrono::high_resolution_clock::now();
+        ImGui::Text("Line Recording Time: %.3f ms",
+                    std::chrono::duration<float, std::milli>(recordEnd - now).count());
+        return submissions;
+    }
+
+private:
+    std::vector<LineRenderingSubmissionData> mLastFrameCache;
+
+public:
+    void GiveBackForNextFrame(std::vector<LineRenderingSubmissionData> &&thisCache) {
+        mLastFrameCache = std::move(thisCache);
+        mLastFrameCache.resize(0);
+    }
+};
+
+#pragma endregion
 
 class Renderer2D {
 public:
@@ -447,7 +541,11 @@ public:
         CreateResources();
         CreateConstantBuffers();
         CreatePipelines();
+        CreatePipelineResources();
+        RecalculateViewProjectionMatrix();
     }
+
+    void CreatePipelineResources();
 
     void BeginRendering();
 
@@ -492,14 +590,17 @@ private:
 
     int mCurrentDepth = 0;
 
-    TriangleBasedRenderingCommandList mTriangleCommandList;
+    // Fucking triangle, needs so many things
+    TriangleRenderingCommandList mTriangleCommandList;
     nvrhi::InputLayoutHandle mTriangleInputLayout;
     nvrhi::GraphicsPipelineHandle mTrianglePipeline;
     nvrhi::BindingLayoutHandle mTriangleBindingLayoutSpace0;
     nvrhi::BindingLayoutHandle mTriangleBindingLayoutSpace1;
     nvrhi::BufferHandle mTriangleConstantBuffer;
     size_t mTriangleBufferInstanceSizeMax;
-    std::vector<BatchRenderingResources> mTriangleBatchRenderingResources;
+    std::vector<TriangleBatchRenderingResources> mTriangleBatchRenderingResources;
+
+    // We also want to rendering lines
 
     void CreateResources();
 
@@ -510,8 +611,6 @@ private:
     void CreateConstantBuffers();
 
     void CreatePipelineTriangle();
-
-    void CreateConstantBufferTriangle();
 
     void SubmitTriangleBatchRendering();
 
@@ -526,8 +625,8 @@ private:
 
 public:
     inline void DrawTriangleColored(const glm::mat3x2 &positions,
-                             const glm::u8vec4 &color,
-                             std::optional<int> overrideDepth = std::nullopt) {
+                                    const glm::u8vec4 &color,
+                                    std::optional<int> overrideDepth = std::nullopt) {
         mTriangleCommandList.AddTriangle(
             positions[0], glm::vec2(0.f, 0.f),
             positions[1], glm::vec2(0.f, 0.f),
@@ -538,10 +637,10 @@ public:
     }
 
     inline void DrawTriangleTextureVirtual(const glm::mat3x2 &positions,
-                                    const glm::mat3x2 &uvs,
-                                    uint32_t virtualTextureID,
-                                    std::optional<int> overrideDepth = std::nullopt,
-                                    glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
+                                           const glm::mat3x2 &uvs,
+                                           uint32_t virtualTextureID,
+                                           std::optional<int> overrideDepth = std::nullopt,
+                                           glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
         mTriangleCommandList.AddTriangle(
             positions[0], uvs[0],
             positions[1], uvs[1],
@@ -552,10 +651,10 @@ public:
     }
 
     inline uint32_t DrawTriangleTextureManaged(const glm::mat3x2 &positions,
-                                        const glm::mat3x2 &uvs,
-                                        const nvrhi::TextureHandle &texture,
-                                        std::optional<int> overrideDepth = std::nullopt,
-                                        glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
+                                               const glm::mat3x2 &uvs,
+                                               const nvrhi::TextureHandle &texture,
+                                               std::optional<int> overrideDepth = std::nullopt,
+                                               glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
         uint32_t virtualTextureID = RegisterVirtualTextureForThisFrame(texture);
         mTriangleCommandList.AddTriangle(
             positions[0], uvs[0],
@@ -568,8 +667,8 @@ public:
     }
 
     inline void DrawQuadColored(const glm::mat4x2 &positions,
-                         const glm::u8vec4 &color,
-                         std::optional<int> overrideDepth = std::nullopt) {
+                                const glm::u8vec4 &color,
+                                std::optional<int> overrideDepth = std::nullopt) {
         mTriangleCommandList.AddQuad(
             positions[0], glm::vec2(0.f, 0.f),
             positions[1], glm::vec2(0.f, 0.f),
@@ -581,10 +680,10 @@ public:
     }
 
     inline void DrawQuadTextureVirtual(const glm::mat4x2 &positions,
-                                const glm::mat4x2 &uvs,
-                                uint32_t virtualTextureID,
-                                std::optional<int> overrideDepth = std::nullopt,
-                                glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
+                                       const glm::mat4x2 &uvs,
+                                       uint32_t virtualTextureID,
+                                       std::optional<int> overrideDepth = std::nullopt,
+                                       glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
         mTriangleCommandList.AddQuad(
             positions[0], uvs[0],
             positions[1], uvs[1],
@@ -596,10 +695,10 @@ public:
     }
 
     inline uint32_t DrawQuadTextureManaged(const glm::mat4x2 &positions,
-                                    const glm::mat4x2 &uvs,
-                                    const nvrhi::TextureHandle &texture,
-                                    std::optional<int> overrideDepth = std::nullopt,
-                                    glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
+                                           const glm::mat4x2 &uvs,
+                                           const nvrhi::TextureHandle &texture,
+                                           std::optional<int> overrideDepth = std::nullopt,
+                                           glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
         uint32_t virtualTextureID = RegisterVirtualTextureForThisFrame(texture);
         mTriangleCommandList.AddQuad(
             positions[0], uvs[0],
@@ -612,6 +711,10 @@ public:
         return virtualTextureID;
     }
 };
+
+void Renderer2D::CreatePipelineResources() {
+    CreateTriangleBatchRenderingResources(4); // this should be enough for most cases, if not we can always expand it
+}
 
 void Renderer2D::BeginRendering() {
     Clear();
@@ -682,8 +785,6 @@ void Renderer2D::CreateResources() {
 
     mBindlessTextureArraySizeMax = std::min<uint32_t>(16384u, hardwareMax);
     mTriangleBufferInstanceSizeMax = 1 << 18; // 2^18 instances
-
-    RecalculateViewProjectionMatrix();
 }
 
 void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
@@ -692,7 +793,7 @@ void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
     }
 
     for (size_t i = mTriangleBatchRenderingResources.size(); i < count; ++i) {
-        BatchRenderingResources resources;
+        TriangleBatchRenderingResources resources;
 
         nvrhi::BufferDesc vertexBufferDesc;
         vertexBufferDesc.byteSize = sizeof(TriangleVertexData) * mTriangleBufferInstanceSizeMax * 4;
@@ -711,9 +812,9 @@ void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
         resources.IndexBuffer = mDevice->createBuffer(indexBufferDesc);
 
         nvrhi::BufferDesc instanceBufferDesc;
-        instanceBufferDesc.byteSize = sizeof(SpriteData) * mTriangleBufferInstanceSizeMax;
+        instanceBufferDesc.byteSize = sizeof(TriangleInstanceData) * mTriangleBufferInstanceSizeMax;
         instanceBufferDesc.canHaveRawViews = true;
-        instanceBufferDesc.structStride = sizeof(SpriteData);
+        instanceBufferDesc.structStride = sizeof(TriangleInstanceData);
         instanceBufferDesc.debugName = "Renderer2D::TriangleInstanceBuffer";
         instanceBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
         instanceBufferDesc.keepInitialState = true;
@@ -734,7 +835,14 @@ void Renderer2D::CreatePipelines() {
 }
 
 void Renderer2D::CreateConstantBuffers() {
-    CreateConstantBufferTriangle();
+    nvrhi::BufferDesc constBufferVPMatrixDesc;
+    constBufferVPMatrixDesc.byteSize = sizeof(glm::mat4);
+    constBufferVPMatrixDesc.isConstantBuffer = true;
+    constBufferVPMatrixDesc.debugName = "Renderer2D::ConstantBufferVPMatrix";
+    constBufferVPMatrixDesc.initialState = nvrhi::ResourceStates::ShaderResource |
+                                           nvrhi::ResourceStates::ConstantBuffer;
+    constBufferVPMatrixDesc.keepInitialState = true;
+    mTriangleConstantBuffer = mDevice->createBuffer(constBufferVPMatrixDesc);
 }
 
 void Renderer2D::CreatePipelineTriangle() {
@@ -810,19 +918,6 @@ void Renderer2D::CreatePipelineTriangle() {
     pipeDesc.renderState.depthStencilState.depthTestEnable = false;
 
     mTrianglePipeline = mDevice->createGraphicsPipeline(pipeDesc, mFramebuffer->getFramebufferInfo());
-
-    CreateTriangleBatchRenderingResources(4); // this should be enough for most cases, if not we can always expand it
-}
-
-void Renderer2D::CreateConstantBufferTriangle() {
-    nvrhi::BufferDesc constBufferVPMatrixDesc;
-    constBufferVPMatrixDesc.byteSize = sizeof(glm::mat4);
-    constBufferVPMatrixDesc.isConstantBuffer = true;
-    constBufferVPMatrixDesc.debugName = "Renderer2D::ConstantBufferVPMatrix";
-    constBufferVPMatrixDesc.initialState = nvrhi::ResourceStates::ShaderResource |
-                                           nvrhi::ResourceStates::ConstantBuffer;
-    constBufferVPMatrixDesc.keepInitialState = true;
-    mTriangleConstantBuffer = mDevice->createBuffer(constBufferVPMatrixDesc);
 }
 
 void Renderer2D::SubmitTriangleBatchRendering() {
@@ -852,7 +947,7 @@ void Renderer2D::SubmitTriangleBatchRendering() {
 
         if (!submission.InstanceData.empty()) {
             mCommandList->writeBuffer(resources.InstanceBuffer, submission.InstanceData.data(),
-                                      sizeof(SpriteData) * submission.InstanceData.size(), 0);
+                                      sizeof(TriangleInstanceData) * submission.InstanceData.size(), 0);
         }
 
 

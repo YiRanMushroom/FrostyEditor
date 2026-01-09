@@ -123,25 +123,29 @@ export struct TriangleBasedRenderingCommandList;
 
 export struct TriangleBasedInstanceRenderingData {
     struct VertexPosition {
-        float x, y;
-        float u, v;
+        glm::vec2 position;
+        glm::vec2 texCoords;
     };
 
-    std::array<VertexPosition, 4> Vertices;
+    glm::mat4x2 Positions;  // 4 vertices, each with 2 components (x, y)
+    glm::mat4x2 TexCoords;  // 4 texture coordinates, each with 2 components (u, v)
     bool IsQuad;
     int VirtualTextureID;
     uint32_t TintColor;
     int Depth;
 
-    static TriangleBasedInstanceRenderingData Triangle(const VertexPosition &v0,
-                                                       const VertexPosition &v1,
-                                                       const VertexPosition &v2,
+    static TriangleBasedInstanceRenderingData Triangle(const glm::vec2 &p0, const glm::vec2 &uv0,
+                                                       const glm::vec2 &p1, const glm::vec2 &uv1,
+                                                       const glm::vec2 &p2, const glm::vec2 &uv2,
                                                        int textureIndex,
                                                        uint32_t tintColor, int depth = 0) {
         TriangleBasedInstanceRenderingData data;
-        data.Vertices[0] = v0;
-        data.Vertices[1] = v1;
-        data.Vertices[2] = v2;
+        data.Positions[0] = p0;
+        data.Positions[1] = p1;
+        data.Positions[2] = p2;
+        data.TexCoords[0] = uv0;
+        data.TexCoords[1] = uv1;
+        data.TexCoords[2] = uv2;
         data.IsQuad = false;
         data.VirtualTextureID = textureIndex;
         data.TintColor = tintColor;
@@ -149,17 +153,21 @@ export struct TriangleBasedInstanceRenderingData {
         return data;
     }
 
-    static TriangleBasedInstanceRenderingData Quad(const VertexPosition &v0,
-                                                   const VertexPosition &v1,
-                                                   const VertexPosition &v2,
-                                                   const VertexPosition &v3,
+    static TriangleBasedInstanceRenderingData Quad(const glm::vec2 &p0, const glm::vec2 &uv0,
+                                                   const glm::vec2 &p1, const glm::vec2 &uv1,
+                                                   const glm::vec2 &p2, const glm::vec2 &uv2,
+                                                   const glm::vec2 &p3, const glm::vec2 &uv3,
                                                    int virtualTextureID,
                                                    uint32_t tintColor, int depth = 0) {
         TriangleBasedInstanceRenderingData data;
-        data.Vertices[0] = v0;
-        data.Vertices[1] = v1;
-        data.Vertices[2] = v2;
-        data.Vertices[3] = v3;
+        data.Positions[0] = p0;
+        data.Positions[1] = p1;
+        data.Positions[2] = p2;
+        data.Positions[3] = p3;
+        data.TexCoords[0] = uv0;
+        data.TexCoords[1] = uv1;
+        data.TexCoords[2] = uv2;
+        data.TexCoords[3] = uv3;
         data.IsQuad = true;
         data.VirtualTextureID = virtualTextureID;
         data.TintColor = tintColor;
@@ -281,35 +289,33 @@ struct TriangleBasedRenderingCommandList {
         Instances.clear();
     }
 
-    void AddTriangle(const TriangleBasedInstanceRenderingData::VertexPosition &v0,
-                     const TriangleBasedInstanceRenderingData::VertexPosition &v1,
-                     const TriangleBasedInstanceRenderingData::VertexPosition &v2,
+    void AddTriangle(const glm::vec2 &p0, const glm::vec2 &uv0,
+                     const glm::vec2 &p1, const glm::vec2 &uv1,
+                     const glm::vec2 &p2, const glm::vec2 &uv2,
                      int virtualTextureID,
                      uint32_t tintColor,
-                     int depth
-    ) {
-        Instances.push_back(
-            TriangleBasedInstanceRenderingData::Triangle(v0, v1, v2, virtualTextureID, tintColor, depth));
+                     int depth) {
+        Instances.resize(Instances.size() + 1);
+        Instances.back() = TriangleBasedInstanceRenderingData::Triangle(
+            p0, uv0, p1, uv1, p2, uv2, virtualTextureID, tintColor, depth);
     }
 
-    void AddQuad(const TriangleBasedInstanceRenderingData::VertexPosition &v0,
-                 const TriangleBasedInstanceRenderingData::VertexPosition &v1,
-                 const TriangleBasedInstanceRenderingData::VertexPosition &v2,
-                 const TriangleBasedInstanceRenderingData::VertexPosition &v3,
+    void AddQuad(const glm::vec2 &p0, const glm::vec2 &uv0,
+                 const glm::vec2 &p1, const glm::vec2 &uv1,
+                 const glm::vec2 &p2, const glm::vec2 &uv2,
+                 const glm::vec2 &p3, const glm::vec2 &uv3,
                  int virtualTextureID,
                  uint32_t tintColor,
-                 int depth
-    ) {
-        Instances.push_back(
-            TriangleBasedInstanceRenderingData::Quad(v0, v1, v2, v3, virtualTextureID, tintColor, depth));
+                 int depth) {
+        Instances.resize(Instances.size() + 1);
+        Instances.back() = TriangleBasedInstanceRenderingData::Quad(
+            p0, uv0, p1, uv1, p2, uv2, p3, uv3, virtualTextureID, tintColor, depth);
     }
-
 
     std::vector<TriangleRendererSubmissionData> RecordRendererSubmissionData(
         size_t triangleBufferInstanceSizeMax) {
         auto now = std::chrono::high_resolution_clock::now();
-        // stable sort by depth, then by texture ID to minimize texture switches
-        std::ranges::stable_sort(Instances, [](const auto &a, const auto &b) {
+        std::ranges::sort(Instances, [](const auto &a, const auto &b) {
             if (a.Depth != b.Depth) return a.Depth < b.Depth;
             return a.VirtualTextureID < b.VirtualTextureID;
         });
@@ -370,8 +376,8 @@ struct TriangleBasedRenderingCommandList {
                 currentSubmission.VertexData.resize(currentSubmission.VertexData.size() + 3);
                 for (int i = 0; i < 3; ++i) {
                     TriangleVertexData *v = &currentSubmission.VertexData[baseVtx + i];
-                    v->position = {instance.Vertices[i].x, instance.Vertices[i].y};
-                    v->texCoords = {instance.Vertices[i].u, instance.Vertices[i].v};
+                    v->position = instance.Positions[i];
+                    v->texCoords = instance.TexCoords[i];
                     v->constantIndex = instanceIndex;
                 }
                 currentSubmission.IndexData.resize(currentSubmission.IndexData.size() + 3);
@@ -384,8 +390,8 @@ struct TriangleBasedRenderingCommandList {
                 currentSubmission.VertexData.resize(currentSubmission.VertexData.size() + 4);
                 for (int i = 0; i < 4; ++i) {
                     TriangleVertexData *v = &currentSubmission.VertexData[baseVtx + i];
-                    v->position = {instance.Vertices[i].x, instance.Vertices[i].y};
-                    v->texCoords = {instance.Vertices[i].u, instance.Vertices[i].v};
+                    v->position = instance.Positions[i];
+                    v->texCoords = instance.TexCoords[i];
                     v->constantIndex = instanceIndex;
                 }
                 currentSubmission.IndexData.resize(currentSubmission.IndexData.size() + 6);
@@ -406,7 +412,7 @@ struct TriangleBasedRenderingCommandList {
                     std::chrono::duration<float, std::milli>(sortEnd - now).count());
         ImGui::Text("Recording Time: %.3f ms",
                     std::chrono::duration<float, std::milli>(recordEnd - sortEnd).count());
-
+        ImGui::Text("Frame rate: %.2f FPS", ImGui::GetIO().Framerate);
         return submissions;
     }
 
@@ -436,7 +442,8 @@ struct Renderer2DDescriptor {
 class Renderer2D {
 public:
     Renderer2D(Renderer2DDescriptor desc)
-        : mDevice(std::move(desc.Device)), mOutputSize(desc.OutputSize), mVirtualSize(desc.VirtualSize), mVirtualTextureManager(mDevice) {
+        : mDevice(std::move(desc.Device)), mOutputSize(desc.OutputSize), mVirtualSize(desc.VirtualSize),
+          mVirtualTextureManager(mDevice) {
         CreateResources();
         CreateConstantBuffers();
         CreatePipelines();
@@ -512,64 +519,98 @@ private:
 
     void RecalculateViewProjectionMatrix();
 
-public:
-    void DrawTriangleColored(const std::array<float, 2> &v0,
-                             const std::array<float, 2> &v1,
-                             const std::array<float, 2> &v2,
-                             nvrhi::Color tintColor,
-                             std::optional<int> overrideDepth = std::nullopt);
+    void SetVirtualSize(const glm::vec2 &virtualSize) {
+        mVirtualSize = virtualSize;
+        RecalculateViewProjectionMatrix();
+    }
 
-    void DrawTriangleTextureVirtual(const std::array<float, 2> &v0,
-                                    const std::array<float, 2> &v1,
-                                    const std::array<float, 2> &v2,
-                                    const std::array<float, 2> &uv0,
-                                    const std::array<float, 2> &uv1,
-                                    const std::array<float, 2> &uv2,
+public:
+    inline void DrawTriangleColored(const glm::mat3x2 &positions,
+                             const glm::u8vec4 &color,
+                             std::optional<int> overrideDepth = std::nullopt) {
+        mTriangleCommandList.AddTriangle(
+            positions[0], glm::vec2(0.f, 0.f),
+            positions[1], glm::vec2(0.f, 0.f),
+            positions[2], glm::vec2(0.f, 0.f),
+            -1,
+            color.r | (color.g << 8) | (color.b << 16) | (color.a << 24),
+            overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
+    }
+
+    inline void DrawTriangleTextureVirtual(const glm::mat3x2 &positions,
+                                    const glm::mat3x2 &uvs,
                                     uint32_t virtualTextureID,
                                     std::optional<int> overrideDepth = std::nullopt,
-                                    nvrhi::Color tintColor = nvrhi::Color(1.f, 1.f, 1.f, 1.f));
+                                    glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
+        mTriangleCommandList.AddTriangle(
+            positions[0], uvs[0],
+            positions[1], uvs[1],
+            positions[2], uvs[2],
+            static_cast<int>(virtualTextureID),
+            tintColor.r | (tintColor.g << 8) | (tintColor.b << 16) | (tintColor.a << 24),
+            overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
+    }
 
-    uint32_t DrawTriangleTextureManaged(const std::array<float, 2> &v0,
-                                        const std::array<float, 2> &v1,
-                                        const std::array<float, 2> &v2,
-                                        const std::array<float, 2> &uv0,
-                                        const std::array<float, 2> &uv1,
-                                        const std::array<float, 2> &uv2,
+    inline uint32_t DrawTriangleTextureManaged(const glm::mat3x2 &positions,
+                                        const glm::mat3x2 &uvs,
                                         const nvrhi::TextureHandle &texture,
                                         std::optional<int> overrideDepth = std::nullopt,
-                                        nvrhi::Color tintColor = nvrhi::Color(1.f, 1.f, 1.f, 1.f));
+                                        glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
+        uint32_t virtualTextureID = RegisterVirtualTextureForThisFrame(texture);
+        mTriangleCommandList.AddTriangle(
+            positions[0], uvs[0],
+            positions[1], uvs[1],
+            positions[2], uvs[2],
+            static_cast<int>(virtualTextureID),
+            tintColor.r | (tintColor.g << 8) | (tintColor.b << 16) | (tintColor.a << 24),
+            overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
+        return virtualTextureID;
+    }
 
-    void DrawQuadColored(const std::array<float, 2> &v0,
-                         const std::array<float, 2> &v1,
-                         const std::array<float, 2> &v2,
-                         const std::array<float, 2> &v3,
-                         nvrhi::Color tintColor,
-                         std::optional<int> overrideDepth = std::nullopt
-    );
+    inline void DrawQuadColored(const glm::mat4x2 &positions,
+                         const glm::u8vec4 &color,
+                         std::optional<int> overrideDepth = std::nullopt) {
+        mTriangleCommandList.AddQuad(
+            positions[0], glm::vec2(0.f, 0.f),
+            positions[1], glm::vec2(0.f, 0.f),
+            positions[2], glm::vec2(0.f, 0.f),
+            positions[3], glm::vec2(0.f, 0.f),
+            -1,
+            color.r | (color.g << 8) | (color.b << 16) | (color.a << 24),
+            overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
+    }
 
-    void DrawQuadTextureVirtual(const std::array<float, 2> &v0,
-                                const std::array<float, 2> &v1,
-                                const std::array<float, 2> &v2,
-                                const std::array<float, 2> &v3,
-                                const std::array<float, 2> &uv0,
-                                const std::array<float, 2> &uv1,
-                                const std::array<float, 2> &uv2,
-                                const std::array<float, 2> &uv3,
+    inline void DrawQuadTextureVirtual(const glm::mat4x2 &positions,
+                                const glm::mat4x2 &uvs,
                                 uint32_t virtualTextureID,
                                 std::optional<int> overrideDepth = std::nullopt,
-                                nvrhi::Color tintColor = nvrhi::Color(1.f, 1.f, 1.f, 1.f));
+                                glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
+        mTriangleCommandList.AddQuad(
+            positions[0], uvs[0],
+            positions[1], uvs[1],
+            positions[2], uvs[2],
+            positions[3], uvs[3],
+            static_cast<int>(virtualTextureID),
+            tintColor.r | (tintColor.g << 8) | (tintColor.b << 16) | (tintColor.a << 24),
+            overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
+    }
 
-    uint32_t DrawQuadTextureManaged(const std::array<float, 2> &v0,
-                                    const std::array<float, 2> &v1,
-                                    const std::array<float, 2> &v2,
-                                    const std::array<float, 2> &v3,
-                                    const std::array<float, 2> &uv0,
-                                    const std::array<float, 2> &uv1,
-                                    const std::array<float, 2> &uv2,
-                                    const std::array<float, 2> &uv3,
+    inline uint32_t DrawQuadTextureManaged(const glm::mat4x2 &positions,
+                                    const glm::mat4x2 &uvs,
                                     const nvrhi::TextureHandle &texture,
                                     std::optional<int> overrideDepth = std::nullopt,
-                                    nvrhi::Color tintColor = nvrhi::Color(1.f, 1.f, 1.f, 1.f));
+                                    glm::u8vec4 tintColor = glm::u8vec4(255, 255, 255, 255)) {
+        uint32_t virtualTextureID = RegisterVirtualTextureForThisFrame(texture);
+        mTriangleCommandList.AddQuad(
+            positions[0], uvs[0],
+            positions[1], uvs[1],
+            positions[2], uvs[2],
+            positions[3], uvs[3],
+            static_cast<int>(virtualTextureID),
+            tintColor.r | (tintColor.g << 8) | (tintColor.b << 16) | (tintColor.a << 24),
+            overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
+        return virtualTextureID;
+    }
 };
 
 void Renderer2D::BeginRendering() {
@@ -593,7 +634,6 @@ void Renderer2D::EndRendering() {
 }
 
 void Renderer2D::OnResize(uint32_t width, uint32_t height) {
-
     if (width == mOutputSize.x && height == mOutputSize.y) {
         return;
     }
@@ -606,88 +646,6 @@ void Renderer2D::OnResize(uint32_t width, uint32_t height) {
     CreateResources();
 
     RecalculateViewProjectionMatrix();
-}
-
-uint32_t Renderer2D::ToRGBAUInt32(const nvrhi::Color &color) {
-    auto r = static_cast<uint32_t>(std::clamp(color.r * 255.f, 0.f, 255.f));
-    auto g = static_cast<uint32_t>(std::clamp(color.g * 255.f, 0.f, 255.f));
-    auto b = static_cast<uint32_t>(std::clamp(color.b * 255.f, 0.f, 255.f));
-    auto a = static_cast<uint32_t>(std::clamp(color.a * 255.f, 0.f, 255.f));
-    return (r << 24) | (g << 16) | (b << 8) | a;
-}
-
-void Renderer2D::DrawTriangleColored(const std::array<float, 2> &v0, const std::array<float, 2> &v1,
-                                     const std::array<float, 2> &v2, nvrhi::Color tintColor,
-                                     std::optional<int> overrideDepth) {
-    TriangleBasedInstanceRenderingData::VertexPosition vert0{v0[0], v0[1], 0.f, 0.f};
-    TriangleBasedInstanceRenderingData::VertexPosition vert1{v1[0], v1[1], 0.f, 0.f};
-    TriangleBasedInstanceRenderingData::VertexPosition vert2{v2[0], v2[1], 0.f, 0.f};
-    mTriangleCommandList.AddTriangle(vert0, vert1, vert2, -1, ToRGBAUInt32(tintColor),
-                                     overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
-}
-
-void Renderer2D::DrawTriangleTextureVirtual(const std::array<float, 2> &v0, const std::array<float, 2> &v1,
-                                            const std::array<float, 2> &v2, const std::array<float, 2> &uv0,
-                                            const std::array<float, 2> &uv1,
-                                            const std::array<float, 2> &uv2, uint32_t virtualTextureID,
-                                            std::optional<int> overrideDepth,
-                                            nvrhi::Color tintColor) {
-    TriangleBasedInstanceRenderingData::VertexPosition vert0{v0[0], v0[1], uv0[0], uv0[1]};
-    TriangleBasedInstanceRenderingData::VertexPosition vert1{v1[0], v1[1], uv1[0], uv1[1]};
-    TriangleBasedInstanceRenderingData::VertexPosition vert2{v2[0], v2[1], uv2[0], uv2[1]};
-    mTriangleCommandList.AddTriangle(vert0, vert1, vert2, virtualTextureID, ToRGBAUInt32(tintColor),
-                                     overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
-}
-
-uint32_t Renderer2D::DrawTriangleTextureManaged(const std::array<float, 2> &v0, const std::array<float, 2> &v1,
-                                                const std::array<float, 2> &v2, const std::array<float, 2> &uv0,
-                                                const std::array<float, 2> &uv1,
-                                                const std::array<float, 2> &uv2, const nvrhi::TextureHandle &texture,
-                                                std::optional<int> overrideDepth,
-                                                nvrhi::Color tintColor) {
-    uint32_t virtualTextureID = mVirtualTextureManager.RegisterTexture(texture);
-    DrawTriangleTextureVirtual(v0, v1, v2, uv0, uv1, uv2, virtualTextureID, overrideDepth, tintColor);
-    return virtualTextureID;
-}
-
-void Renderer2D::DrawQuadColored(const std::array<float, 2> &v0, const std::array<float, 2> &v1,
-                                 const std::array<float, 2> &v2, const std::array<float, 2> &v3,
-                                 nvrhi::Color tintColor, std::optional<int> overrideDepth) {
-    TriangleBasedInstanceRenderingData::VertexPosition vert0{v0[0], v0[1], 0.f, 0.f};
-    TriangleBasedInstanceRenderingData::VertexPosition vert1{v1[0], v1[1], 0.f, 0.f};
-    TriangleBasedInstanceRenderingData::VertexPosition vert2{v2[0], v2[1], 0.f, 0.f};
-    TriangleBasedInstanceRenderingData::VertexPosition vert3{v3[0], v3[1], 0.f, 0.f};
-    mTriangleCommandList.AddQuad(vert0, vert1, vert2, vert3, -1, ToRGBAUInt32(tintColor),
-                                 overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
-}
-
-void Renderer2D::DrawQuadTextureVirtual(const std::array<float, 2> &v0, const std::array<float, 2> &v1,
-                                        const std::array<float, 2> &v2, const std::array<float, 2> &v3,
-                                        const std::array<float, 2> &uv0,
-                                        const std::array<float, 2> &uv1, const std::array<float, 2> &uv2,
-                                        const std::array<float, 2> &uv3,
-                                        uint32_t virtualTextureID,
-                                        std::optional<int> overrideDepth,
-                                        nvrhi::Color tintColor) {
-    TriangleBasedInstanceRenderingData::VertexPosition vert0{v0[0], v0[1], uv0[0], uv0[1]};
-    TriangleBasedInstanceRenderingData::VertexPosition vert1{v1[0], v1[1], uv1[0], uv1[1]};
-    TriangleBasedInstanceRenderingData::VertexPosition vert2{v2[0], v2[1], uv2[0], uv2[1]};
-    TriangleBasedInstanceRenderingData::VertexPosition vert3{v3[0], v3[1], uv3[0], uv3[1]};
-    mTriangleCommandList.AddQuad(vert0, vert1, vert2, vert3, virtualTextureID, ToRGBAUInt32(tintColor),
-                                 overrideDepth.has_value() ? overrideDepth.value() : mCurrentDepth);
-}
-
-uint32_t Renderer2D::DrawQuadTextureManaged(const std::array<float, 2> &v0, const std::array<float, 2> &v1,
-                                            const std::array<float, 2> &v2, const std::array<float, 2> &v3,
-                                            const std::array<float, 2> &uv0,
-                                            const std::array<float, 2> &uv1, const std::array<float, 2> &uv2,
-                                            const std::array<float, 2> &uv3,
-                                            const nvrhi::TextureHandle &texture,
-                                            std::optional<int> overrideDepth,
-                                            nvrhi::Color tintColor) {
-    uint32_t virtualTextureID = mVirtualTextureManager.RegisterTexture(texture);
-    DrawQuadTextureVirtual(v0, v1, v2, v3, uv0, uv1, uv2, uv3, virtualTextureID, overrideDepth, tintColor);
-    return virtualTextureID;
 }
 
 void Renderer2D::CreateResources() {
@@ -946,16 +904,16 @@ void Renderer2D::RecalculateViewProjectionMatrix() {
 
     float uniformScale = std::min(scaleX, scaleY);
 
-    float halfVisibleWidth  = static_cast<float>(mOutputSize.x) / (2.0f * uniformScale);
+    float halfVisibleWidth = static_cast<float>(mOutputSize.x) / (2.0f * uniformScale);
     float halfVisibleHeight = static_cast<float>(mOutputSize.y) / (2.0f * uniformScale);
 
     mViewProjectionMatrix = glm::ortho(
-        -halfVisibleWidth,   // Left
-         halfVisibleWidth,   // Right
-         halfVisibleHeight,  // Bottom
-        -halfVisibleHeight,  // Top
-        -1.0f,               // zNear
-         1.0f                // zFar
+        -halfVisibleWidth, // Left
+        halfVisibleWidth, // Right
+        halfVisibleHeight, // Bottom
+        -halfVisibleHeight, // Top
+        -1.0f, // zNear
+        1.0f // zFar
     );
 }
 
@@ -1014,8 +972,8 @@ public:
         const int quadCountHalfX = 150;
         const int quadCountHalfY = 100;
 
-        const float quadSize = 4.0f;
-        const float spacing = 1.0f;
+        const float quadSize = 5.0f;
+        const float spacing = 0.0f;
 
         uint32_t texIdRed = mRenderer->RegisterVirtualTextureForThisFrame(mRedTextureHandle);
         uint32_t texIdGreen = mRenderer->RegisterVirtualTextureForThisFrame(mGreenTextureHandle);
@@ -1026,31 +984,34 @@ public:
                 float posX = x * (quadSize + spacing);
                 float posY = y * (quadSize + spacing);
 
-                nvrhi::Color tintColor(1.f, 1.f, 1.f, 1.f);
+                glm::u8vec4 tintColor;
                 uint32_t texId = texIdRed;
 
                 int modResult = ((x + y) % 3 + 3) % 3;
 
                 if (modResult == 0) {
                     texId = texIdRed;
-                    tintColor = nvrhi::Color(1.f, 0.5f, 0.5f, 1.f);
+                    tintColor = glm::u8vec4(255, 255, 255, 127);
                 } else if (modResult == 1) {
                     texId = texIdGreen;
-                    tintColor = nvrhi::Color(0.5f, 1.f, 0.5f, 1.f);
+                    tintColor = glm::u8vec4(255, 255, 255, 127);
                 } else {
                     texId = texIdBlue;
-                    tintColor = nvrhi::Color(0.5f, 0.5f, 1.f, 1.f);
+                    tintColor = glm::u8vec4(255, 128, 255, 127);
                 }
-
                 mRenderer->DrawQuadTextureVirtual(
-                    {posX, posY},
-                    {posX + quadSize, posY},
-                    {posX + quadSize, posY + quadSize},
-                    {posX, posY + quadSize},
-                    {0.f, 0.f},
-                    {1.f, 0.f},
-                    {1.f, 1.f},
-                    {0.f, 1.f},
+                    glm::mat4x2(
+                        posX, posY,
+                        posX + quadSize, posY,
+                        posX + quadSize, posY + quadSize,
+                        posX, posY + quadSize
+                    ),
+                    glm::mat4x2(
+                        0.f, 0.f,
+                        1.f, 0.f,
+                        1.f, 1.f,
+                        0.f, 1.f
+                    ),
                     texId,
                     std::nullopt,
                     tintColor

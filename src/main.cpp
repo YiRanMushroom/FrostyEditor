@@ -20,7 +20,7 @@ Engine {
             .Title = "Frosty Engine App"
         });
         app->EmplaceLayer<RendererDevelopmentLayer>();
-        app->EmplaceLayer<ImGuiDebugTestLayer>();
+        // app->EmplaceLayer<ImGuiDebugTestLayer>();
         app->Run();
         app->DetachAllLayers();
         app->Destroy();

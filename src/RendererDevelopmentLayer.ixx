@@ -17,6 +17,9 @@ import Render.GeneratedShaders;
 import <cassert>;
 import <cstddef>;
 
+import glm;
+import "glm/gtx/transform.hpp";
+
 using namespace Engine;
 
 export class FramebufferPresenter {
@@ -106,10 +109,9 @@ private:
 };
 
 export struct TriangleVertexData {
-    std::array<float, 2> position;
-    std::array<float, 2> texCoords;
+    glm::vec2 position;
+    glm::vec2 texCoords;
     uint32_t constantIndex;
-    uint32_t padding[3];
 };
 
 export struct SpriteData {
@@ -425,11 +427,16 @@ struct BatchRenderingResources {
     nvrhi::BindingSetHandle mBindingSetSpace0;
 };
 
+struct Renderer2DDescriptor {
+    glm::u32vec2 OutputSize;
+    glm::vec2 VirtualSize;
+    nvrhi::DeviceHandle Device;
+};
 
 class Renderer2D {
 public:
-    Renderer2D(nvrhi::IDevice *device, uint32_t width, uint32_t height)
-        : mDevice(device), mWidth(width), mHeight(height), mVirtualTextureManager(device) {
+    Renderer2D(Renderer2DDescriptor desc)
+        : mDevice(std::move(desc.Device)), mOutputSize(desc.OutputSize), mVirtualSize(desc.VirtualSize), mVirtualTextureManager(mDevice) {
         CreateResources();
         CreateConstantBuffers();
         CreatePipelines();
@@ -461,7 +468,10 @@ private:
 
 private:
     nvrhi::DeviceHandle mDevice;
-    uint32_t mWidth, mHeight;
+
+    glm::u32vec2 mOutputSize;
+    glm::vec2 mVirtualSize;
+    glm::mat4 mViewProjectionMatrix;
 
     nvrhi::TextureHandle mTexture;
     nvrhi::FramebufferHandle mFramebuffer;
@@ -473,14 +483,13 @@ private:
     nvrhi::CommandListHandle mCommandList;
     nvrhi::SamplerHandle mTextureSampler;
 
-    std::array<float, 16> mViewProjectionMatrix;
-
     int mCurrentDepth = 0;
 
     TriangleBasedRenderingCommandList mTriangleCommandList;
     nvrhi::InputLayoutHandle mTriangleInputLayout;
     nvrhi::GraphicsPipelineHandle mTrianglePipeline;
-    std::array<nvrhi::BindingLayoutHandle, 2> mTriangleBindingLayouts;
+    nvrhi::BindingLayoutHandle mTriangleBindingLayoutSpace0;
+    nvrhi::BindingLayoutHandle mTriangleBindingLayoutSpace1;
     nvrhi::BufferHandle mTriangleConstantBuffer;
     size_t mTriangleBufferInstanceSizeMax;
     std::vector<BatchRenderingResources> mTriangleBatchRenderingResources;
@@ -500,6 +509,8 @@ private:
     void SubmitTriangleBatchRendering();
 
     void Submit();
+
+    void RecalculateViewProjectionMatrix();
 
 public:
     void DrawTriangleColored(const std::array<float, 2> &v0,
@@ -574,14 +585,7 @@ void Renderer2D::BeginRendering() {
 void Renderer2D::EndRendering() {
     Submit();
     mCommandList->close();
-    // auto now = std::chrono::high_resolution_clock::now();
-    // nvrhi::EventQueryHandle eventQuery = mDevice->createEventQuery();
     mDevice->executeCommandList(mCommandList);
-    // mDevice->setEventQuery(eventQuery, nvrhi::CommandQueue::Graphics);
-    // mDevice->waitEventQuery(eventQuery);
-    // auto end = std::chrono::high_resolution_clock::now();
-    // ImGui::Text("GPU Submission Time: %.3f ms",
-    // std::chrono::duration<float, std::milli>(end - now).count());
 
     if (mVirtualTextureManager.IsSubOptimal()) {
         mVirtualTextureManager.Optimize();
@@ -589,22 +593,19 @@ void Renderer2D::EndRendering() {
 }
 
 void Renderer2D::OnResize(uint32_t width, uint32_t height) {
-    if (width == mWidth && height == mHeight) return;
+
+    if (width == mOutputSize.x && height == mOutputSize.y) {
+        return;
+    }
     mDevice->waitForIdle();
 
-    mWidth = width;
-    mHeight = height;
+    mOutputSize = glm::u32vec2(width, height);
     mTexture.Reset();
     mFramebuffer.Reset();
 
     CreateResources();
 
-    mViewProjectionMatrix = {
-        2.0f / static_cast<float>(mWidth), 0.0f, 0.0f, 0.0f,
-        0.0f, -2.0f / static_cast<float>(mHeight), 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        -1.0f, 1.0f, 0.0f, 1.0f
-    };
+    RecalculateViewProjectionMatrix();
 }
 
 uint32_t Renderer2D::ToRGBAUInt32(const nvrhi::Color &color) {
@@ -691,8 +692,8 @@ uint32_t Renderer2D::DrawQuadTextureManaged(const std::array<float, 2> &v0, cons
 
 void Renderer2D::CreateResources() {
     nvrhi::TextureDesc texDesc;
-    texDesc.width = mWidth;
-    texDesc.height = mHeight;
+    texDesc.width = mOutputSize.x;
+    texDesc.height = mOutputSize.y;
     texDesc.format = nvrhi::Format::RGBA8_UNORM;
     texDesc.isRenderTarget = true;
     texDesc.isShaderResource = true;
@@ -724,12 +725,7 @@ void Renderer2D::CreateResources() {
     mBindlessTextureArraySizeMax = std::min<uint32_t>(16384u, hardwareMax);
     mTriangleBufferInstanceSizeMax = 1 << 18; // 2^18 instances
 
-    mViewProjectionMatrix = {
-        2.0f / static_cast<float>(mWidth), 0.0f, 0.0f, 0.0f,
-        0.0f, -2.0f / static_cast<float>(mHeight), 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        -1.0f, 1.0f, 0.0f, 1.0f
-    };
+    RecalculateViewProjectionMatrix();
 }
 
 void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
@@ -769,7 +765,7 @@ void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
         bindingSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, mTriangleConstantBuffer));
         bindingSetDesc.addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, resources.InstanceBuffer));
         bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(0, mTextureSampler));
-        resources.mBindingSetSpace0 = mDevice->createBindingSet(bindingSetDesc, mTriangleBindingLayouts[0]);
+        resources.mBindingSetSpace0 = mDevice->createBindingSet(bindingSetDesc, mTriangleBindingLayoutSpace0);
 
         mTriangleBatchRenderingResources.push_back(resources);
     }
@@ -832,16 +828,16 @@ void Renderer2D::CreatePipelineTriangle() {
         nvrhi::BindingLayoutItem::Texture_SRV(0).setSize(mBindlessTextureArraySizeMax)
     };
 
-    mTriangleBindingLayouts[0] = mDevice->createBindingLayout(bindingLayoutDesc[0]);
-    mTriangleBindingLayouts[1] = mDevice->createBindingLayout(bindingLayoutDesc[1]);
+    mTriangleBindingLayoutSpace0 = mDevice->createBindingLayout(bindingLayoutDesc[0]);
+    mTriangleBindingLayoutSpace1 = mDevice->createBindingLayout(bindingLayoutDesc[1]);
 
     nvrhi::GraphicsPipelineDesc pipeDesc;
     pipeDesc.VS = vs;
     pipeDesc.PS = ps;
     pipeDesc.inputLayout = mTriangleInputLayout;
     pipeDesc.bindingLayouts = {
-        mTriangleBindingLayouts[0],
-        mTriangleBindingLayouts[1]
+        mTriangleBindingLayoutSpace0,
+        mTriangleBindingLayoutSpace1
     };
 
     pipeDesc.primType = nvrhi::PrimitiveType::TriangleList;
@@ -862,7 +858,7 @@ void Renderer2D::CreatePipelineTriangle() {
 
 void Renderer2D::CreateConstantBufferTriangle() {
     nvrhi::BufferDesc constBufferVPMatrixDesc;
-    constBufferVPMatrixDesc.byteSize = sizeof(float) * 4 * 4;
+    constBufferVPMatrixDesc.byteSize = sizeof(glm::mat4);
     constBufferVPMatrixDesc.isConstantBuffer = true;
     constBufferVPMatrixDesc.debugName = "Renderer2D::ConstantBufferVPMatrix";
     constBufferVPMatrixDesc.initialState = nvrhi::ResourceStates::ShaderResource |
@@ -878,8 +874,8 @@ void Renderer2D::SubmitTriangleBatchRendering() {
     CreateTriangleBatchRenderingResources(submissions.size());
 
     // submit constant buffer
-    mCommandList->writeBuffer(mTriangleConstantBuffer, mViewProjectionMatrix.data(),
-                              sizeof(float) * 16, 0);
+    mCommandList->writeBuffer(mTriangleConstantBuffer, &mViewProjectionMatrix,
+                              sizeof(glm::mat4), 0);
 
     for (size_t i = 0; i < submissions.size(); ++i) {
         auto &submission = submissions[i];
@@ -903,9 +899,8 @@ void Renderer2D::SubmitTriangleBatchRendering() {
 
 
         mCommandList->setResourceStatesForBindingSet(resources.mBindingSetSpace0);
-        auto bindingSetSpace1 = mVirtualTextureManager.GetBindingSet(mTriangleBindingLayouts[1]);
+        auto bindingSetSpace1 = mVirtualTextureManager.GetBindingSet(mTriangleBindingLayoutSpace1);
         mCommandList->setResourceStatesForBindingSet(bindingSetSpace1);
-
 
         // Draw Call
         nvrhi::GraphicsState state;
@@ -945,15 +940,37 @@ void Renderer2D::Submit() {
     SubmitTriangleBatchRendering();
 }
 
+void Renderer2D::RecalculateViewProjectionMatrix() {
+    float scaleX = static_cast<float>(mOutputSize.x) / mVirtualSize.x;
+    float scaleY = static_cast<float>(mOutputSize.y) / mVirtualSize.y;
+
+    float uniformScale = std::min(scaleX, scaleY);
+
+    float halfVisibleWidth  = static_cast<float>(mOutputSize.x) / (2.0f * uniformScale);
+    float halfVisibleHeight = static_cast<float>(mOutputSize.y) / (2.0f * uniformScale);
+
+    mViewProjectionMatrix = glm::ortho(
+        -halfVisibleWidth,   // Left
+         halfVisibleWidth,   // Right
+         halfVisibleHeight,  // Bottom
+        -halfVisibleHeight,  // Top
+        -1.0f,               // zNear
+         1.0f                // zFar
+    );
+}
+
 export class RendererDevelopmentLayer : public Layer {
 public:
     virtual void OnAttach(const std::shared_ptr<Application> &app) override {
         Layer::OnAttach(app);
         auto &swapchain = mApp->GetSwapchainData();
 
-        mRenderer = std::make_shared<Renderer2D>(mApp->GetNvrhiDevice().Get(),
-                                                 swapchain.GetWidth(),
-                                                 swapchain.GetHeight());
+        Renderer2DDescriptor rendererDesc;
+        rendererDesc.Device = mApp->GetNvrhiDevice();
+        rendererDesc.OutputSize = {swapchain.GetWidth(), swapchain.GetHeight()};
+        rendererDesc.VirtualSize = {1920.0f, 1080.0f};
+
+        mRenderer = std::make_shared<Renderer2D>(std::move(rendererDesc));
 
         mPresenter = std::make_shared<FramebufferPresenter>(mApp->GetNvrhiDevice().Get(),
                                                             swapchain.GetFramebufferInfo());
@@ -994,40 +1011,49 @@ public:
 
         mRenderer->BeginRendering();
 
-        const int quadCountX = 250;
-        const int quadCountY = 150;
+        const int quadCountHalfX = 150;
+        const int quadCountHalfY = 100;
 
-        const float quadSize = 8.0f;
-        const float spacing = 2.0f;
+        const float quadSize = 4.0f;
+        const float spacing = 1.0f;
 
         uint32_t texIdRed = mRenderer->RegisterVirtualTextureForThisFrame(mRedTextureHandle);
         uint32_t texIdGreen = mRenderer->RegisterVirtualTextureForThisFrame(mGreenTextureHandle);
         uint32_t texIdBlue = mRenderer->RegisterVirtualTextureForThisFrame(mBlueTextureHandle);
 
-        for (int y = 0; y < quadCountY; ++y) {
-            for (int x = 0; x < quadCountX; ++x) {
-                float px = 50.0f + x * (quadSize + spacing);
-                float py = 50.0f + y * (quadSize + spacing);
+        for (int y = -quadCountHalfY; y <= quadCountHalfY; ++y) {
+            for (int x = -quadCountHalfX; x <= quadCountHalfX; ++x) {
+                float posX = x * (quadSize + spacing);
+                float posY = y * (quadSize + spacing);
 
-                mRenderer->SetCurrentDepth((x + y) & 1);
+                nvrhi::Color tintColor(1.f, 1.f, 1.f, 1.f);
+                uint32_t texId = texIdRed;
 
-                uint32_t texId;
-                switch ((x + y) % 3) {
-                    case 0: texId = texIdRed;
-                        break;
-                    case 1: texId = texIdGreen;
-                        break;
-                    default: texId = texIdBlue;
-                        break;
+                int modResult = ((x + y) % 3 + 3) % 3;
+
+                if (modResult == 0) {
+                    texId = texIdRed;
+                    tintColor = nvrhi::Color(1.f, 0.5f, 0.5f, 1.f);
+                } else if (modResult == 1) {
+                    texId = texIdGreen;
+                    tintColor = nvrhi::Color(0.5f, 1.f, 0.5f, 1.f);
+                } else {
+                    texId = texIdBlue;
+                    tintColor = nvrhi::Color(0.5f, 0.5f, 1.f, 1.f);
                 }
 
                 mRenderer->DrawQuadTextureVirtual(
-                    {px, py},
-                    {px + quadSize, py},
-                    {px + quadSize, py + quadSize},
-                    {px, py + quadSize},
-                    {0.f, 0.f}, {1.f, 0.f}, {1.f, 1.f}, {0.f, 1.f},
-                    texId
+                    {posX, posY},
+                    {posX + quadSize, posY},
+                    {posX + quadSize, posY + quadSize},
+                    {posX, posY + quadSize},
+                    {0.f, 0.f},
+                    {1.f, 0.f},
+                    {1.f, 1.f},
+                    {0.f, 1.f},
+                    texId,
+                    std::nullopt,
+                    tintColor
                 );
             }
         }

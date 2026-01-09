@@ -544,6 +544,236 @@ struct LineBatchRenderingResources {
 
 #pragma endregion
 
+#pragma region EllipseImplementationLogic
+
+struct EllipseShapeData {
+    glm::vec2 center;
+    glm::vec2 radii;
+    float rotation;
+    float innerScale;
+    float startAngle;
+    float endAngle;
+    uint32_t tintColor;
+    int32_t textureIndex;
+    float edgeSoftness;
+    float _padding;
+};
+
+static_assert(sizeof(EllipseShapeData) == 48, "EllipseShapeData must be 48 bytes for GPU alignment");
+
+export struct EllipseRenderingData {
+    glm::vec2 center;
+    glm::vec2 radii;
+    float rotation = 0.0f;
+    float innerScale = 0.0f;
+    float startAngle = 0.0f;
+    float endAngle = 0.0f;
+    int virtualTextureID = -1;
+    uint32_t tintColor = 0xFFFFFFFF;
+    float edgeSoftness = 1.0f;
+    int depth = 0;
+
+    static EllipseRenderingData Circle(const glm::vec2& center, float radius,
+                                       const glm::u8vec4& color, int depth = 0) {
+        EllipseRenderingData data;
+        data.center = center;
+        data.radii = glm::vec2(radius, radius);
+        data.tintColor = (color.r << 24) | (color.g << 16) | (color.b << 8) | color.a;
+        data.depth = depth;
+        return data;
+    }
+
+    static EllipseRenderingData Ellipse(const glm::vec2& center, const glm::vec2& radii,
+                                        float rotation, const glm::u8vec4& color, int depth = 0) {
+        EllipseRenderingData data;
+        data.center = center;
+        data.radii = radii;
+        data.rotation = rotation;
+        data.tintColor = (color.r << 24) | (color.g << 16) | (color.b << 8) | color.a;
+        data.depth = depth;
+        return data;
+    }
+
+    static EllipseRenderingData Ring(const glm::vec2& center, float outerRadius, float innerRadius,
+                                     const glm::u8vec4& color, int depth = 0) {
+        EllipseRenderingData data;
+        data.center = center;
+        data.radii = glm::vec2(outerRadius, outerRadius);
+        data.innerScale = innerRadius / outerRadius;
+        data.tintColor = (color.r << 24) | (color.g << 16) | (color.b << 8) | color.a;
+        data.depth = depth;
+        return data;
+    }
+
+    static EllipseRenderingData Sector(const glm::vec2& center, float radius,
+                                       float startAngle, float endAngle,
+                                       const glm::u8vec4& color, int textureIndex = -1, int depth = 0) {
+        EllipseRenderingData data;
+        data.center = center;
+        data.radii = glm::vec2(radius, radius);
+        data.startAngle = startAngle;
+        data.endAngle = endAngle;
+        data.virtualTextureID = textureIndex;
+        data.tintColor = (color.r << 24) | (color.g << 16) | (color.b << 8) | color.a;
+        data.depth = depth;
+        return data;
+    }
+
+    static EllipseRenderingData Arc(const glm::vec2& center, float radius, float thickness,
+                                    float startAngle, float endAngle,
+                                    const glm::u8vec4& color, int depth = 0) {
+        EllipseRenderingData data;
+        data.center = center;
+        data.radii = glm::vec2(radius, radius);
+        data.innerScale = (radius - thickness) / radius;
+        data.startAngle = startAngle;
+        data.endAngle = endAngle;
+        data.tintColor = (color.r << 24) | (color.g << 16) | (color.b << 8) | color.a;
+        data.depth = depth;
+        return data;
+    }
+
+    static EllipseRenderingData EllipseSector(const glm::vec2& center, const glm::vec2& radii,
+                                              float rotation, float startAngle, float endAngle,
+                                              const glm::u8vec4& color, int textureIndex = -1, int depth = 0) {
+        EllipseRenderingData data;
+        data.center = center;
+        data.radii = radii;
+        data.rotation = rotation;
+        data.startAngle = startAngle;
+        data.endAngle = endAngle;
+        data.virtualTextureID = textureIndex;
+        data.tintColor = (color.r << 24) | (color.g << 16) | (color.b << 8) | color.a;
+        data.depth = depth;
+        return data;
+    }
+
+    static EllipseRenderingData EllipseArc(const glm::vec2& center, const glm::vec2& radii,
+                                           float rotation, float thickness,
+                                           float startAngle, float endAngle,
+                                           const glm::u8vec4& color, int depth = 0) {
+        EllipseRenderingData data;
+        data.center = center;
+        data.radii = radii;
+        data.rotation = rotation;
+        float minRadius = glm::min(radii.x, radii.y);
+        data.innerScale = glm::max(0.0f, (minRadius - thickness) / minRadius);
+        data.startAngle = startAngle;
+        data.endAngle = endAngle;
+        data.tintColor = (color.r << 24) | (color.g << 16) | (color.b << 8) | color.a;
+        data.depth = depth;
+        return data;
+    }
+};
+
+struct EllipseRenderingSubmissionData {
+    std::vector<EllipseShapeData> ShapeData;
+
+    EllipseRenderingSubmissionData() = default;
+    EllipseRenderingSubmissionData(EllipseRenderingSubmissionData&&) = default;
+    EllipseRenderingSubmissionData& operator=(EllipseRenderingSubmissionData&&) = default;
+
+    void Clear() {
+        ShapeData.clear();
+    }
+};
+
+struct EllipseRenderingCommandList {
+    std::vector<EllipseRenderingData> Instances;
+
+    void Clear() {
+        Instances.clear();
+    }
+
+    void AddEllipse(const EllipseRenderingData& data) {
+        Instances.push_back(data);
+    }
+
+    std::vector<EllipseRenderingSubmissionData> RecordRendererSubmissionData(size_t ellipseBufferInstanceSizeMax) {
+        auto now = std::chrono::high_resolution_clock::now();
+
+        std::ranges::sort(Instances, [](const auto& a, const auto& b) {
+            if (a.depth != b.depth) return a.depth < b.depth;
+            return a.virtualTextureID < b.virtualTextureID;
+        });
+
+        auto sortEnd = std::chrono::high_resolution_clock::now();
+
+        std::vector<EllipseRenderingSubmissionData> submissions;
+        if (Instances.empty()) return submissions;
+
+        auto lastFrameSubmissionIt = mLastFrameCache.begin();
+
+        EllipseRenderingSubmissionData currentSubmission;
+        if (lastFrameSubmissionIt != mLastFrameCache.end()) {
+            currentSubmission = std::move(*lastFrameSubmissionIt);
+            currentSubmission.ShapeData.clear();
+            ++lastFrameSubmissionIt;
+        }
+
+        auto finalizeSubmission = [&]() mutable {
+            if (!currentSubmission.ShapeData.empty()) {
+                submissions.push_back(std::move(currentSubmission));
+
+                if (lastFrameSubmissionIt == mLastFrameCache.end()) {
+                    currentSubmission.Clear();
+                } else {
+                    currentSubmission = std::move(*lastFrameSubmissionIt);
+                    currentSubmission.ShapeData.clear();
+                    ++lastFrameSubmissionIt;
+                }
+            }
+        };
+
+        for (const auto& instance : Instances) {
+            if (currentSubmission.ShapeData.size() + 1 > ellipseBufferInstanceSizeMax) {
+                finalizeSubmission();
+            }
+
+            EllipseShapeData shapeData;
+            shapeData.center = instance.center;
+            shapeData.radii = instance.radii;
+            shapeData.rotation = instance.rotation;
+            shapeData.innerScale = instance.innerScale;
+            shapeData.startAngle = instance.startAngle;
+            shapeData.endAngle = instance.endAngle;
+            shapeData.tintColor = instance.tintColor;
+            shapeData.textureIndex = instance.virtualTextureID;
+            shapeData.edgeSoftness = instance.edgeSoftness;
+            shapeData._padding = 0.0f;
+
+            currentSubmission.ShapeData.push_back(shapeData);
+        }
+
+        finalizeSubmission();
+
+        auto recordEnd = std::chrono::high_resolution_clock::now();
+        ImGui::Text("Ellipse Count: %zu", Instances.size());
+        ImGui::Text("Ellipse Submissions: %zu", submissions.size());
+        ImGui::Text("Ellipse Sorting Time: %.3f ms",
+                    std::chrono::duration<float, std::milli>(sortEnd - now).count());
+        ImGui::Text("Ellipse Recording Time: %.3f ms",
+                    std::chrono::duration<float, std::milli>(recordEnd - sortEnd).count());
+        return submissions;
+    }
+
+private:
+    std::vector<EllipseRenderingSubmissionData> mLastFrameCache;
+
+public:
+    void GiveBackForNextFrame(std::vector<EllipseRenderingSubmissionData>&& thisCache) {
+        mLastFrameCache = std::move(thisCache);
+        mLastFrameCache.resize(0);
+    }
+};
+
+struct EllipseBatchRenderingResources {
+    nvrhi::BufferHandle ShapeBuffer;
+    nvrhi::BindingSetHandle mBindingSetSpace0;
+};
+
+#pragma endregion
+
 class Renderer2D {
 public:
     Renderer2D(Renderer2DDescriptor desc)
@@ -571,6 +801,7 @@ public:
     void Clear() {
         mTriangleCommandList.Clear();
         mLineCommandList.Clear();
+        mEllipseCommandList.Clear();
     }
 
     [[nodiscard]] int GetCurrentDepth() const { return mCurrentDepth; }
@@ -618,11 +849,22 @@ private:
     size_t mLineBufferVertexSizeMax;
     std::vector<LineBatchRenderingResources> mLineBatchRenderingResources;
 
+    // Ellipse rendering (circles, ellipses, sectors, arcs)
+    EllipseRenderingCommandList mEllipseCommandList;
+    nvrhi::GraphicsPipelineHandle mEllipsePipeline;
+    nvrhi::BindingLayoutHandle mEllipseBindingLayoutSpace0;
+    nvrhi::BindingLayoutHandle mEllipseBindingLayoutSpace1;
+    nvrhi::BufferHandle mEllipseConstantBuffer;
+    size_t mEllipseBufferInstanceSizeMax;
+    std::vector<EllipseBatchRenderingResources> mEllipseBatchRenderingResources;
+
     void CreateResources();
 
     void CreateTriangleBatchRenderingResources(size_t count);
 
     void CreateLineBatchRenderingResources(size_t count);
+
+    void CreateEllipseBatchRenderingResources(size_t count);
 
     void CreatePipelines();
 
@@ -632,9 +874,13 @@ private:
 
     void CreatePipelineLine();
 
+    void CreatePipelineEllipse();
+
     void SubmitTriangleBatchRendering();
 
     void SubmitLineBatchRendering();
+
+    void SubmitEllipseBatchRendering();
 
     void Submit();
 
@@ -742,11 +988,154 @@ public:
                          const glm::u8vec4 &color0, const glm::u8vec4 &color1) {
         mLineCommandList.AddLine(p0, color0, p1, color1);
     }
+
+    inline void DrawCircle(const glm::vec2& center, float radius,
+                          const glm::u8vec4& color,
+                          std::optional<int> overrideDepth = std::nullopt) {
+        EllipseRenderingData data = EllipseRenderingData::Circle(
+            center, radius, color, overrideDepth.value_or(mCurrentDepth));
+        mEllipseCommandList.AddEllipse(data);
+    }
+
+    inline void DrawEllipse(const glm::vec2& center, const glm::vec2& radii,
+                           float rotation, const glm::u8vec4& color,
+                           std::optional<int> overrideDepth = std::nullopt) {
+        EllipseRenderingData data = EllipseRenderingData::Ellipse(
+            center, radii, rotation, color, overrideDepth.value_or(mCurrentDepth));
+        mEllipseCommandList.AddEllipse(data);
+    }
+
+    inline void DrawRing(const glm::vec2& center, float outerRadius, float innerRadius,
+                        const glm::u8vec4& color,
+                        std::optional<int> overrideDepth = std::nullopt) {
+        EllipseRenderingData data = EllipseRenderingData::Ring(
+            center, outerRadius, innerRadius, color, overrideDepth.value_or(mCurrentDepth));
+        mEllipseCommandList.AddEllipse(data);
+    }
+
+    inline void DrawSector(const glm::vec2& center, float radius,
+                          float startAngle, float endAngle,
+                          const glm::u8vec4& color,
+                          std::optional<int> overrideDepth = std::nullopt) {
+        EllipseRenderingData data = EllipseRenderingData::Sector(
+            center, radius, startAngle, endAngle, color, -1, overrideDepth.value_or(mCurrentDepth));
+        mEllipseCommandList.AddEllipse(data);
+    }
+
+    inline void DrawSectorTextured(const glm::vec2& center, float radius,
+                                   float startAngle, float endAngle,
+                                   uint32_t virtualTextureID,
+                                   const glm::u8vec4& tintColor = glm::u8vec4(255, 255, 255, 255),
+                                   std::optional<int> overrideDepth = std::nullopt) {
+        EllipseRenderingData data = EllipseRenderingData::Sector(
+            center, radius, startAngle, endAngle, tintColor,
+            static_cast<int>(virtualTextureID), overrideDepth.value_or(mCurrentDepth));
+        mEllipseCommandList.AddEllipse(data);
+    }
+
+    inline uint32_t DrawSectorTextureManaged(const glm::vec2& center, float radius,
+                                             float startAngle, float endAngle,
+                                             const nvrhi::TextureHandle& texture,
+                                             const glm::u8vec4& tintColor = glm::u8vec4(255, 255, 255, 255),
+                                             std::optional<int> overrideDepth = std::nullopt) {
+        uint32_t virtualTextureID = RegisterVirtualTextureForThisFrame(texture);
+        EllipseRenderingData data = EllipseRenderingData::Sector(
+            center, radius, startAngle, endAngle, tintColor,
+            static_cast<int>(virtualTextureID), overrideDepth.value_or(mCurrentDepth));
+        mEllipseCommandList.AddEllipse(data);
+        return virtualTextureID;
+    }
+
+    inline void DrawArc(const glm::vec2& center, float radius, float thickness,
+                       float startAngle, float endAngle,
+                       const glm::u8vec4& color,
+                       std::optional<int> overrideDepth = std::nullopt) {
+        EllipseRenderingData data = EllipseRenderingData::Arc(
+            center, radius, thickness, startAngle, endAngle, color, overrideDepth.value_or(mCurrentDepth));
+        mEllipseCommandList.AddEllipse(data);
+    }
+
+    inline void DrawEllipseSector(const glm::vec2& center, const glm::vec2& radii,
+                                  float rotation, float startAngle, float endAngle,
+                                  const glm::u8vec4& color,
+                                  std::optional<int> overrideDepth = std::nullopt) {
+        EllipseRenderingData data = EllipseRenderingData::EllipseSector(
+            center, radii, rotation, startAngle, endAngle, color, -1, overrideDepth.value_or(mCurrentDepth));
+        mEllipseCommandList.AddEllipse(data);
+    }
+
+    inline void DrawEllipseSectorTextured(const glm::vec2& center, const glm::vec2& radii,
+                                          float rotation, float startAngle, float endAngle,
+                                          uint32_t virtualTextureID,
+                                          const glm::u8vec4& tintColor = glm::u8vec4(255, 255, 255, 255),
+                                          std::optional<int> overrideDepth = std::nullopt) {
+        EllipseRenderingData data = EllipseRenderingData::EllipseSector(
+            center, radii, rotation, startAngle, endAngle, tintColor,
+            static_cast<int>(virtualTextureID), overrideDepth.value_or(mCurrentDepth));
+        mEllipseCommandList.AddEllipse(data);
+    }
+
+    inline void DrawEllipseArc(const glm::vec2& center, const glm::vec2& radii,
+                               float rotation, float thickness,
+                               float startAngle, float endAngle,
+                               const glm::u8vec4& color,
+                               std::optional<int> overrideDepth = std::nullopt) {
+        EllipseRenderingData data = EllipseRenderingData::EllipseArc(
+            center, radii, rotation, thickness, startAngle, endAngle, color, overrideDepth.value_or(mCurrentDepth));
+        mEllipseCommandList.AddEllipse(data);
+    }
+
+    inline void DrawCircleTextured(const glm::vec2& center, float radius,
+                                   uint32_t virtualTextureID,
+                                   const glm::u8vec4& tintColor = glm::u8vec4(255, 255, 255, 255),
+                                   std::optional<int> overrideDepth = std::nullopt) {
+        EllipseRenderingData data;
+        data.center = center;
+        data.radii = glm::vec2(radius, radius);
+        data.virtualTextureID = static_cast<int>(virtualTextureID);
+        data.tintColor = (tintColor.r << 24) | (tintColor.g << 16) | (tintColor.b << 8) | tintColor.a;
+        data.depth = overrideDepth.value_or(mCurrentDepth);
+        mEllipseCommandList.AddEllipse(data);
+    }
+
+    inline uint32_t DrawCircleTextureManaged(const glm::vec2& center, float radius,
+                                             const nvrhi::TextureHandle& texture,
+                                             const glm::u8vec4& tintColor = glm::u8vec4(255, 255, 255, 255),
+                                             std::optional<int> overrideDepth = std::nullopt) {
+        uint32_t virtualTextureID = RegisterVirtualTextureForThisFrame(texture);
+        DrawCircleTextured(center, radius, virtualTextureID, tintColor, overrideDepth);
+        return virtualTextureID;
+    }
+
+    inline void DrawEllipseTextured(const glm::vec2& center, const glm::vec2& radii,
+                                    float rotation, uint32_t virtualTextureID,
+                                    const glm::u8vec4& tintColor = glm::u8vec4(255, 255, 255, 255),
+                                    std::optional<int> overrideDepth = std::nullopt) {
+        EllipseRenderingData data;
+        data.center = center;
+        data.radii = radii;
+        data.rotation = rotation;
+        data.virtualTextureID = static_cast<int>(virtualTextureID);
+        data.tintColor = (tintColor.r << 24) | (tintColor.g << 16) | (tintColor.b << 8) | tintColor.a;
+        data.depth = overrideDepth.value_or(mCurrentDepth);
+        mEllipseCommandList.AddEllipse(data);
+    }
+
+    inline uint32_t DrawEllipseTextureManaged(const glm::vec2& center, const glm::vec2& radii,
+                                              float rotation,
+                                              const nvrhi::TextureHandle& texture,
+                                              const glm::u8vec4& tintColor = glm::u8vec4(255, 255, 255, 255),
+                                              std::optional<int> overrideDepth = std::nullopt) {
+        uint32_t virtualTextureID = RegisterVirtualTextureForThisFrame(texture);
+        DrawEllipseTextured(center, radii, rotation, virtualTextureID, tintColor, overrideDepth);
+        return virtualTextureID;
+    }
 };
 
 void Renderer2D::CreatePipelineResources() {
     CreateTriangleBatchRenderingResources(4); // this should be enough for most cases, if not we can always expand it
     CreateLineBatchRenderingResources(4); // same for lines
+    CreateEllipseBatchRenderingResources(4); // same for ellipses
 }
 
 void Renderer2D::BeginRendering() {
@@ -819,6 +1208,7 @@ void Renderer2D::CreateResources() {
     mBindlessTextureArraySizeMax = std::min<uint32_t>(16384u, hardwareMax);
     mTriangleBufferInstanceSizeMax = 1 << 18; // 2^18 instances
     mLineBufferVertexSizeMax = 1 << 18; // 2^18 vertices
+    mEllipseBufferInstanceSizeMax = 1 << 16; // 2^16 ellipses (each ellipse = 6 vertices)
 }
 
 void Renderer2D::CreateTriangleBatchRenderingResources(size_t count) {
@@ -888,9 +1278,37 @@ void Renderer2D::CreateLineBatchRenderingResources(size_t count) {
     }
 }
 
+void Renderer2D::CreateEllipseBatchRenderingResources(size_t count) {
+    if (count <= mEllipseBatchRenderingResources.size()) {
+        return;
+    }
+
+    for (size_t i = mEllipseBatchRenderingResources.size(); i < count; ++i) {
+        EllipseBatchRenderingResources resources;
+
+        nvrhi::BufferDesc shapeBufferDesc;
+        shapeBufferDesc.byteSize = sizeof(EllipseShapeData) * mEllipseBufferInstanceSizeMax;
+        shapeBufferDesc.canHaveRawViews = true;
+        shapeBufferDesc.structStride = sizeof(EllipseShapeData);
+        shapeBufferDesc.debugName = "Renderer2D::EllipseShapeBuffer";
+        shapeBufferDesc.initialState = nvrhi::ResourceStates::ShaderResource;
+        shapeBufferDesc.keepInitialState = true;
+        resources.ShapeBuffer = mDevice->createBuffer(shapeBufferDesc);
+
+        nvrhi::BindingSetDesc bindingSetDesc;
+        bindingSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, mEllipseConstantBuffer));
+        bindingSetDesc.addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, resources.ShapeBuffer));
+        bindingSetDesc.addItem(nvrhi::BindingSetItem::Sampler(0, mTextureSampler));
+        resources.mBindingSetSpace0 = mDevice->createBindingSet(bindingSetDesc, mEllipseBindingLayoutSpace0);
+
+        mEllipseBatchRenderingResources.push_back(resources);
+    }
+}
+
 void Renderer2D::CreatePipelines() {
     CreatePipelineTriangle();
     CreatePipelineLine();
+    CreatePipelineEllipse();
 }
 
 void Renderer2D::CreateConstantBuffers() {
@@ -911,6 +1329,15 @@ void Renderer2D::CreateConstantBuffers() {
                                        nvrhi::ResourceStates::ConstantBuffer;
     constBufferLineDesc.keepInitialState = true;
     mLineConstantBuffer = mDevice->createBuffer(constBufferLineDesc);
+
+    nvrhi::BufferDesc constBufferEllipseDesc;
+    constBufferEllipseDesc.byteSize = sizeof(glm::mat4);
+    constBufferEllipseDesc.isConstantBuffer = true;
+    constBufferEllipseDesc.debugName = "Renderer2D::EllipseConstantBufferVPMatrix";
+    constBufferEllipseDesc.initialState = nvrhi::ResourceStates::ShaderResource |
+                                          nvrhi::ResourceStates::ConstantBuffer;
+    constBufferEllipseDesc.keepInitialState = true;
+    mEllipseConstantBuffer = mDevice->createBuffer(constBufferEllipseDesc);
 }
 
 void Renderer2D::CreatePipelineTriangle() {
@@ -1048,6 +1475,59 @@ void Renderer2D::CreatePipelineLine() {
     mLinePipeline = mDevice->createGraphicsPipeline(pipeDesc, mFramebuffer->getFramebufferInfo());
 }
 
+void Renderer2D::CreatePipelineEllipse() {
+    nvrhi::ShaderDesc vsDesc;
+    vsDesc.shaderType = nvrhi::ShaderType::Vertex;
+    vsDesc.entryName = "main";
+    nvrhi::ShaderHandle vs = mDevice->createShader(vsDesc,
+                                                   GeneratedShaders::renderer2d_ellipse_vs.data(),
+                                                   GeneratedShaders::renderer2d_ellipse_vs.size());
+
+    nvrhi::ShaderDesc psDesc;
+    psDesc.shaderType = nvrhi::ShaderType::Pixel;
+    psDesc.entryName = "main";
+    nvrhi::ShaderHandle ps = mDevice->createShader(psDesc,
+                                                   GeneratedShaders::renderer2d_ellipse_ps.data(),
+                                                   GeneratedShaders::renderer2d_ellipse_ps.size());
+
+    nvrhi::BindingLayoutDesc bindingLayoutDesc[2];
+    bindingLayoutDesc[0].visibility = nvrhi::ShaderType::Vertex | nvrhi::ShaderType::Pixel;
+    bindingLayoutDesc[0].bindings = {
+        nvrhi::BindingLayoutItem::ConstantBuffer(0),
+        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(0),
+        nvrhi::BindingLayoutItem::Sampler(0)
+    };
+
+    bindingLayoutDesc[1].visibility = nvrhi::ShaderType::Pixel;
+    bindingLayoutDesc[1].bindings = {
+        nvrhi::BindingLayoutItem::Texture_SRV(0).setSize(mBindlessTextureArraySizeMax)
+    };
+
+    mEllipseBindingLayoutSpace0 = mDevice->createBindingLayout(bindingLayoutDesc[0]);
+    mEllipseBindingLayoutSpace1 = mDevice->createBindingLayout(bindingLayoutDesc[1]);
+
+    nvrhi::GraphicsPipelineDesc pipeDesc;
+    pipeDesc.VS = vs;
+    pipeDesc.PS = ps;
+    pipeDesc.bindingLayouts = {
+        mEllipseBindingLayoutSpace0,
+        mEllipseBindingLayoutSpace1
+    };
+
+    pipeDesc.primType = nvrhi::PrimitiveType::TriangleList;
+
+    pipeDesc.renderState.blendState.targets[0].blendEnable = true;
+    pipeDesc.renderState.blendState.targets[0].srcBlend = nvrhi::BlendFactor::SrcAlpha;
+    pipeDesc.renderState.blendState.targets[0].destBlend = nvrhi::BlendFactor::InvSrcAlpha;
+    pipeDesc.renderState.blendState.targets[0].srcBlendAlpha = nvrhi::BlendFactor::One;
+    pipeDesc.renderState.blendState.targets[0].destBlendAlpha = nvrhi::BlendFactor::InvSrcAlpha;
+    pipeDesc.renderState.blendState.targets[0].colorWriteMask = nvrhi::ColorMask::All;
+    pipeDesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
+    pipeDesc.renderState.depthStencilState.depthTestEnable = false;
+
+    mEllipsePipeline = mDevice->createGraphicsPipeline(pipeDesc, mFramebuffer->getFramebufferInfo());
+}
+
 void Renderer2D::SubmitTriangleBatchRendering() {
     auto submissions = mTriangleCommandList.RecordRendererSubmissionData(
         mTriangleBufferInstanceSizeMax);
@@ -1171,9 +1651,57 @@ void Renderer2D::SubmitLineBatchRendering() {
     mLineCommandList.GiveBackForNextFrame(std::move(submissions));
 }
 
+void Renderer2D::SubmitEllipseBatchRendering() {
+    auto submissions = mEllipseCommandList.RecordRendererSubmissionData(
+        mEllipseBufferInstanceSizeMax);
+
+    if (submissions.empty()) {
+        return;
+    }
+
+    CreateEllipseBatchRenderingResources(submissions.size());
+
+    mCommandList->writeBuffer(mEllipseConstantBuffer, &mViewProjectionMatrix,
+                              sizeof(glm::mat4), 0);
+
+    for (size_t i = 0; i < submissions.size(); ++i) {
+        auto &submission = submissions[i];
+        auto &resources = mEllipseBatchRenderingResources[i];
+
+        if (submission.ShapeData.empty()) {
+            continue;
+        }
+
+        mCommandList->writeBuffer(resources.ShapeBuffer, submission.ShapeData.data(),
+                                  sizeof(EllipseShapeData) * submission.ShapeData.size(), 0);
+
+        mCommandList->setResourceStatesForBindingSet(resources.mBindingSetSpace0);
+        auto bindingSetSpace1 = mVirtualTextureManager.GetBindingSet(mEllipseBindingLayoutSpace1);
+        mCommandList->setResourceStatesForBindingSet(bindingSetSpace1);
+
+        nvrhi::GraphicsState state;
+        state.pipeline = mEllipsePipeline;
+        state.framebuffer = mFramebuffer;
+        state.viewport.addViewportAndScissorRect(
+            mFramebuffer->getFramebufferInfo().getViewport());
+        state.bindings.push_back(resources.mBindingSetSpace0);
+        state.bindings.push_back(bindingSetSpace1);
+
+        mCommandList->setGraphicsState(state);
+
+        nvrhi::DrawArguments drawArgs;
+        drawArgs.vertexCount = static_cast<uint32_t>(submission.ShapeData.size() * 6);
+
+        mCommandList->draw(drawArgs);
+    }
+
+    mEllipseCommandList.GiveBackForNextFrame(std::move(submissions));
+}
+
 void Renderer2D::Submit() {
     SubmitTriangleBatchRendering();
     SubmitLineBatchRendering();
+    SubmitEllipseBatchRendering();
 }
 
 void Renderer2D::RecalculateViewProjectionMatrix() {
@@ -1297,43 +1825,74 @@ public:
         //     }
         // }
 
-        // Test line rendering
-        // Draw RED horizontal line at top
-        mRenderer->DrawLine(
-            glm::vec2(-800.0f, -400.0f),
-            glm::vec2(-400.0f, 0.0f),
-            glm::u8vec4(255, 0, 0, 255)
-        );
+        // Test line rendering (commented out for circle tests)
+        // mRenderer->DrawLine(
+        //     glm::vec2(-800.0f, -400.0f),
+        //     glm::vec2(-400.0f, 0.0f),
+        //     glm::u8vec4(255, 0, 0, 255)
+        // );
+        //
+        // mRenderer->DrawLine(
+        //     glm::vec2(-400.0f, -400.0f),
+        //     glm::vec2(0.0f, 0.0f),
+        //     glm::u8vec4(0, 255, 0, 255)
+        // );
+        //
+        // mRenderer->DrawLine(
+        //     glm::vec2(0.0f, -400.0f),
+        //     glm::vec2(400.0f, 0.0f),
+        //     glm::u8vec4(0, 0, 255, 255)
+        // );
+        //
+        // mRenderer->DrawLine(
+        //     glm::vec2(400.0f, -400.0f),
+        //     glm::vec2(800.0f, 0.0f),
+        //     glm::u8vec4(255, 255, 0, 255)
+        // );
+        //
+        // mRenderer->DrawLine(
+        //     glm::vec2(-800.0f, 0.0f),
+        //     glm::vec2(-400.0f, 400.0f),
+        //     glm::u8vec4(0, 255, 255, 255)
+        // );
+        //
+        // mRenderer->DrawLine(
+        //     glm::vec2(400.0f, 0.0f),
+        //     glm::vec2(800.0f, 400.0f),
+        //     glm::u8vec4(255, 0, 255, 255)
+        // );
 
-        mRenderer->DrawLine(
-            glm::vec2(-400.0f, -400.0f),
-            glm::vec2(0.0f, 0.0f),
-            glm::u8vec4(0, 255, 0, 255)
-        );
+        // Test circle/ellipse rendering
+        // Basic solid circles
+        mRenderer->DrawCircle(glm::vec2(-400.0f, -200.0f), 80.0f, glm::u8vec4(255, 0, 0, 255));
+        mRenderer->DrawCircle(glm::vec2(-200.0f, -200.0f), 60.0f, glm::u8vec4(0, 255, 0, 255));
+        mRenderer->DrawCircle(glm::vec2(0.0f, -200.0f), 70.0f, glm::u8vec4(0, 0, 255, 255));
+        mRenderer->DrawCircle(glm::vec2(200.0f, -200.0f), 50.0f, glm::u8vec4(255, 255, 0, 255));
 
-        mRenderer->DrawLine(
-            glm::vec2(0.0f, -400.0f),
-            glm::vec2(400.0f, 0.0f),
-            glm::u8vec4(0, 0, 255, 255)
-        );
+        // Circles with transparency
+        mRenderer->DrawCircle(glm::vec2(-300.0f, 0.0f), 90.0f, glm::u8vec4(255, 0, 255, 128));
+        mRenderer->DrawCircle(glm::vec2(-100.0f, 0.0f), 85.0f, glm::u8vec4(0, 255, 255, 128));
 
-        mRenderer->DrawLine(
-            glm::vec2(400.0f, -400.0f),
-            glm::vec2(800.0f, 0.0f),
-            glm::u8vec4(255, 255, 0, 255)
-        );
+        // Ellipses with rotation
+        mRenderer->DrawEllipse(glm::vec2(150.0f, 0.0f), glm::vec2(100.0f, 50.0f), 0.0f,
+                              glm::u8vec4(255, 128, 0, 255));
+        mRenderer->DrawEllipse(glm::vec2(350.0f, 0.0f), glm::vec2(100.0f, 50.0f), 0.785f,
+                              glm::u8vec4(128, 0, 255, 255));
 
-        mRenderer->DrawLine(
-            glm::vec2(-800.0f, 0.0f),
-            glm::vec2(-400.0f, 400.0f),
-            glm::u8vec4(0, 255, 255, 255)
-        );
+        // Rings
+        mRenderer->DrawRing(glm::vec2(-400.0f, 250.0f), 80.0f, 50.0f, glm::u8vec4(255, 0, 0, 255));
+        mRenderer->DrawRing(glm::vec2(-200.0f, 250.0f), 70.0f, 50.0f, glm::u8vec4(0, 255, 0, 255));
 
-        mRenderer->DrawLine(
-            glm::vec2(400.0f, 0.0f),
-            glm::vec2(800.0f, 400.0f),
-            glm::u8vec4(255, 0, 255, 255)
-        );
+        // Sectors (pie slices)
+        const float PI = 3.14159265359f;
+        mRenderer->DrawSector(glm::vec2(0.0f, 250.0f), 80.0f, 0.0f, PI * 0.5f,
+                             glm::u8vec4(255, 255, 0, 255));
+        mRenderer->DrawSector(glm::vec2(200.0f, 250.0f), 80.0f, PI * 0.25f, PI * 1.25f,
+                             glm::u8vec4(0, 255, 255, 255));
+
+        // Arcs (ring segments)
+        mRenderer->DrawArc(glm::vec2(400.0f, 250.0f), 80.0f, 15.0f, 0.0f, PI * 1.5f,
+                          glm::u8vec4(255, 0, 255, 255));
 
         mRenderer->EndRendering();
 

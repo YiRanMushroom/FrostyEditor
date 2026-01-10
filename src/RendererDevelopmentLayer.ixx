@@ -66,13 +66,16 @@ public:
         device->executeCommandList(commandList);
     }
 
+    virtual void OnUpdate(std::chrono::duration<float> deltaTime) override {
+        Layer::OnUpdate(deltaTime);
+
+        ImGui::Begin("Renderer Development Layer");
+        ImGui::Text("Frame rate: %.2f FPS", ImGui::GetIO().Framerate);
+        ImGui::End();
+    }
+
     virtual void OnRender(const nvrhi::CommandListHandle &commandList,
                           const nvrhi::FramebufferHandle &framebuffer, uint32_t frameIndex) override {
-        static bool enabled = true;
-
-        ImGui::Begin("TriangleBasedRenderingCommandList Profiling", &enabled);
-
-        ImGui::Text("Frame rate: %.2f FPS", ImGui::GetIO().Framerate);
 
         mRenderer->BeginRendering();
 
@@ -80,62 +83,77 @@ public:
         uint32_t texIdGreen = mRenderer->RegisterVirtualTextureForThisFrame(mGreenTextureHandle);
         uint32_t texIdBlue = mRenderer->RegisterVirtualTextureForThisFrame(mBlueTextureHandle);
 
-        // Draw a quad from (-200, -100) to (200, 100) with the red texture, but only show (-190, 90) to (190, 90)
-        ClipRegion clipRect = ClipRegion::Quad(
-            {
-                {-190.f, -90.f},
-                {-190.f, 90.f},
-                {190.f, 90.f},
-                {190.f, -90.f}
-            },
-            Engine::ClipMode::ShowOutside
+        // Test Triangle commands (Top row, left side)
+        // Colored triangle
+        mRenderer->DrawTriangleColored(
+            glm::mat3x2(-850.0f, -350.0f, -750.0f, -350.0f, -800.0f, -250.0f),
+            glm::u8vec4(255, 0, 0, 255)
         );
 
+        // Textured triangle with virtual texture
+        mRenderer->DrawTriangleTextureVirtual(
+            glm::mat3x2(-650.0f, -350.0f, -550.0f, -350.0f, -600.0f, -250.0f),
+            glm::mat3x2(0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 1.0f),
+            texIdRed
+        );
+
+        // Test Quad commands (Top row, center-left)
+        // Colored quad
+        mRenderer->DrawQuadColored(
+            glm::mat4x2(-450.0f, -350.0f, -350.0f, -350.0f, -350.0f, -250.0f, -450.0f, -250.0f),
+            glm::u8vec4(0, 255, 0, 255)
+        );
+
+        // Textured quad with virtual texture
         mRenderer->DrawQuadTextureVirtual(
-            {
-                {-200.f, -100.f},
-                {-200.f, 100.f},
-                {200.f, 100.f},
-                {200.f, -100.f}
-            },
-            {
-                {0.f, 1.f},
-                {0.f, 0.f},
-                {1.f, 0.f},
-                {1.f, 1.f}
-            },
-            texIdRed,
-            std::nullopt,
-            glm::u8vec4(255, 255, 255, 255),
-            &clipRect
+            glm::mat4x2(-250.0f, -350.0f, -150.0f, -350.0f, -150.0f, -250.0f, -250.0f, -250.0f),
+            glm::mat4x2(0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f),
+            texIdGreen
         );
 
-        // Draw a clipped ring using the green texture
-        ClipRegion clipRing = ClipRegion::Quad(
-            {
-                {-50.f, -50.f},
-                {-50.f, 50.f},
-                {50.f, 50.f},
-                {50.f, -50.f}
-            },
-            Engine::ClipMode::ShowInside
-        );
+        // Test Line commands (Top row, center-right)
+        mRenderer->DrawLine(glm::vec2(50.0f, -350.0f), glm::vec2(150.0f, -350.0f), glm::u8vec4(255, 255, 0, 255));
+        mRenderer->DrawLine(glm::vec2(50.0f, -320.0f), glm::vec2(150.0f, -260.0f),
+                          glm::u8vec4(255, 0, 0, 255), glm::u8vec4(0, 0, 255, 255));
 
-        mRenderer->DrawRing(
-            {0.f,0.f},
-            65.f,
-            55.f,
-            glm::u8vec4(127, 127, 255, 255),
-            std::nullopt,
-            &clipRing
-            );
+        // Test Circle commands (Top row, right side)
+        mRenderer->DrawCircle(glm::vec2(350.0f, -300.0f), 50.0f, glm::u8vec4(255, 0, 255, 255));
+        mRenderer->DrawCircleTextureVirtual(glm::vec2(550.0f, -300.0f), 50.0f, texIdBlue);
+
+        // Test Ellipse commands (Middle row, left side)
+        mRenderer->DrawEllipse(glm::vec2(-700.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.785f,
+                             glm::u8vec4(0, 255, 255, 255));
+        mRenderer->DrawEllipseTextureVirtual(glm::vec2(-500.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.0f,
+                                            texIdRed, glm::u8vec4(255, 255, 255, 200));
+
+        // Test Ring command (Middle row, center-left)
+        mRenderer->DrawRing(glm::vec2(-250.0f, 0.0f), 60.0f, 40.0f, glm::u8vec4(255, 128, 0, 255));
+
+        // Test Sector commands (Middle row, center)
+        mRenderer->DrawSector(glm::vec2(0.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
+                            glm::u8vec4(128, 0, 255, 255));
+        mRenderer->DrawSectorTextureVirtual(glm::vec2(200.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
+                                          texIdGreen, glm::u8vec4(255, 255, 255, 255));
+
+        // Test Arc command (Middle row, right side)
+        mRenderer->DrawArc(glm::vec2(500.0f, 0.0f), 60.0f, 12.0f, 0.0f, 4.71239f,
+                         glm::u8vec4(255, 200, 0, 255));
+
+        // Test Ellipse Sector commands (Bottom row)
+        mRenderer->DrawEllipseSector(glm::vec2(-500.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
+                                   0.0f, 3.14159f, glm::u8vec4(0, 128, 255, 255));
+        mRenderer->DrawEllipseSectorTextureVirtual(glm::vec2(-200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
+                                                 0.0f, 3.14159f, texIdRed);
+
+        // Test Ellipse Arc command (Bottom row, right side)
+        mRenderer->DrawEllipseArc(glm::vec2(200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.785f,
+                                10.0f, 0.0f, 4.71239f, glm::u8vec4(255, 100, 100, 255));
 
         mRenderer->EndRendering();
 
         // Present the renderer's output to the main framebuffer
         mPresenter->Present(commandList, mRenderer->GetTexture(), framebuffer);
 
-        ImGui::End();
     }
 
     virtual bool OnEvent(const Event &event) override {

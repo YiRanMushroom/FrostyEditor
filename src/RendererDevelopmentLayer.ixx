@@ -68,7 +68,9 @@ public:
 
     virtual void OnRender(const nvrhi::CommandListHandle &commandList,
                           const nvrhi::FramebufferHandle &framebuffer, uint32_t frameIndex) override {
-        ImGui::Begin("TriangleBasedRenderingCommandList Profiling");
+        static bool enabled = true;
+
+        ImGui::Begin("TriangleBasedRenderingCommandList Profiling", &enabled);
 
         ImGui::Text("Frame rate: %.2f FPS", ImGui::GetIO().Framerate);
 
@@ -78,132 +80,55 @@ public:
         uint32_t texIdGreen = mRenderer->RegisterVirtualTextureForThisFrame(mGreenTextureHandle);
         uint32_t texIdBlue = mRenderer->RegisterVirtualTextureForThisFrame(mBlueTextureHandle);
 
-        // Define some clip regions for testing
-        ClipRegion clipRect1; // Rectangular clip for triangles/quads - cuts triangle in half
-        // Triangle is at: (-850,-350), (-750,-350), (-800,-250)
-        // Clip rect top edge at Y=-300 will cut it horizontally in the middle
-        clipRect1.Points[0] = glm::vec2(-900.0f, -400.0f);  // Left-Bottom
-        clipRect1.Points[1] = glm::vec2(-700.0f, -400.0f);  // Right-Bottom
-        clipRect1.Points[2] = glm::vec2(-700.0f, -300.0f);  // Right-Top (cuts through middle)
-        clipRect1.Points[3] = glm::vec2(-900.0f, -300.0f);  // Left-Top (cuts through middle)
-        clipRect1.PointCount = 4;
-        clipRect1.ClipMode = 0; // Show inside (clip outside) - only bottom half visible
-
-        ClipRegion clipRect2; // Rectangular clip for circles
-        // Circles at: (350,-300) and (550,-300), radius 50
-        // Create a rect in the middle area to clip OUT (inverted mode)
-        clipRect2.Points[0] = glm::vec2(325.0f, -325.0f);  // Left-Bottom
-        clipRect2.Points[1] = glm::vec2(575.0f, -325.0f);  // Right-Bottom
-        clipRect2.Points[2] = glm::vec2(575.0f, -275.0f);  // Right-Top
-        clipRect2.Points[3] = glm::vec2(325.0f, -275.0f);  // Left-Top
-        clipRect2.PointCount = 4;
-        clipRect2.ClipMode = 1; // Show outside (clip inside) - center area hidden
-
-        ClipRegion clipTriangle; // Triangular clip for ellipses
-        clipTriangle.Points[0] = glm::vec2(-550.0f, -50.0f);
-        clipTriangle.Points[1] = glm::vec2(-400.0f, -50.0f);
-        clipTriangle.Points[2] = glm::vec2(-475.0f, 50.0f);
-        clipTriangle.PointCount = 3;
-        clipTriangle.ClipMode = 0; // Show inside
-
-        ClipRegion clipRect3; // For bottom shapes
-        clipRect3.Points[0] = glm::vec2(-550.0f, 250.0f);
-        clipRect3.Points[1] = glm::vec2(-150.0f, 250.0f);
-        clipRect3.Points[2] = glm::vec2(-150.0f, 350.0f);
-        clipRect3.Points[3] = glm::vec2(-550.0f, 350.0f);
-        clipRect3.PointCount = 4;
-        clipRect3.ClipMode = 0; // Show inside
-
-        ClipRegion clipRectQuad; // For quad clipping
-        // Quad is at: (-450,-350) to (-350,-250)
-        // Cut it vertically in the middle at X=-400
-        clipRectQuad.Points[0] = glm::vec2(-400.0f, -400.0f);  // Left-Bottom (cuts through middle)
-        clipRectQuad.Points[1] = glm::vec2(-300.0f, -400.0f);  // Right-Bottom
-        clipRectQuad.Points[2] = glm::vec2(-300.0f, -200.0f);  // Right-Top
-        clipRectQuad.Points[3] = glm::vec2(-400.0f, -200.0f);  // Left-Top (cuts through middle)
-        clipRectQuad.PointCount = 4;
-        clipRectQuad.ClipMode = 0; // Show inside - only right half visible
-
-        // Test Triangle commands (Top row, left side)
-        // Colored triangle - WITH CLIPPING
-        mRenderer->DrawTriangleColored(
-            glm::mat3x2(-850.0f, -350.0f, -750.0f, -350.0f, -800.0f, -250.0f),
-            glm::u8vec4(255, 0, 0, 255),
-            std::nullopt,
-            &clipRect1
+        // Draw a quad from (-200, -100) to (200, 100) with the red texture, but only show (-190, 90) to (190, 90)
+        ClipRegion clipRect = ClipRegion::Quad(
+            {
+                {-190.f, -90.f},
+                {-190.f, 90.f},
+                {190.f, 90.f},
+                {190.f, -90.f}
+            },
+            Engine::ClipMode::ShowOutside
         );
 
-        // Textured triangle with virtual texture - NO CLIPPING
-        mRenderer->DrawTriangleTextureVirtual(
-            glm::mat3x2(-650.0f, -350.0f, -550.0f, -350.0f, -600.0f, -250.0f),
-            glm::mat3x2(0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 1.0f),
-            texIdRed
-        );
-
-        // Test Quad commands (Top row, center-left)
-        // Colored quad - WITH CLIPPING (right half visible)
-        mRenderer->DrawQuadColored(
-            glm::mat4x2(-450.0f, -350.0f, -350.0f, -350.0f, -350.0f, -250.0f, -450.0f, -250.0f),
-            glm::u8vec4(0, 255, 0, 255),
-            std::nullopt,
-            &clipRectQuad
-        );
-
-        // Textured quad with virtual texture - NO CLIPPING
         mRenderer->DrawQuadTextureVirtual(
-            glm::mat4x2(-250.0f, -350.0f, -150.0f, -350.0f, -150.0f, -250.0f, -250.0f, -250.0f),
-            glm::mat4x2(0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f),
-            texIdGreen
+            {
+                {-200.f, -100.f},
+                {-200.f, 100.f},
+                {200.f, 100.f},
+                {200.f, -100.f}
+            },
+            {
+                {0.f, 1.f},
+                {0.f, 0.f},
+                {1.f, 0.f},
+                {1.f, 1.f}
+            },
+            texIdRed,
+            std::nullopt,
+            glm::u8vec4(255, 255, 255, 255),
+            &clipRect
         );
 
-        // Test Line commands (Top row, center-right)
-        mRenderer->DrawLine(glm::vec2(50.0f, -350.0f), glm::vec2(150.0f, -350.0f), glm::u8vec4(255, 255, 0, 255));
-        mRenderer->DrawLine(glm::vec2(50.0f, -320.0f), glm::vec2(150.0f, -260.0f),
-                          glm::u8vec4(255, 0, 0, 255), glm::u8vec4(0, 0, 255, 255));
+        // Draw a clipped ring using the green texture
+        ClipRegion clipRing = ClipRegion::Quad(
+            {
+                {-50.f, -50.f},
+                {-50.f, 50.f},
+                {50.f, 50.f},
+                {50.f, -50.f}
+            },
+            Engine::ClipMode::ShowInside
+        );
 
-        // Test Circle commands (Top row, right side)
-        // Circle - WITH INVERTED CLIPPING (show outside, clip inside)
-        mRenderer->DrawCircle(glm::vec2(350.0f, -300.0f), 50.0f, glm::u8vec4(255, 0, 255, 255),
-                             std::nullopt, &clipRect2);
-        // Textured circle - WITH INVERTED CLIPPING
-        mRenderer->DrawCircleTextureVirtual(glm::vec2(550.0f, -300.0f), 50.0f, texIdBlue,
-                                           glm::u8vec4(255, 255, 255, 255), std::nullopt, &clipRect2);
-
-        // Test Ellipse commands (Middle row, left side)
-        // Ellipse - NO CLIPPING
-        mRenderer->DrawEllipse(glm::vec2(-700.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.785f,
-                             glm::u8vec4(0, 255, 255, 255));
-        // Textured ellipse - WITH TRIANGULAR CLIPPING
-        mRenderer->DrawEllipseTextureVirtual(glm::vec2(-500.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.0f,
-                                            texIdRed, glm::u8vec4(255, 255, 255, 200),
-                                            std::nullopt, &clipTriangle);
-
-        // Test Ring command (Middle row, center-left) - NO CLIPPING
-        mRenderer->DrawRing(glm::vec2(-250.0f, 0.0f), 60.0f, 40.0f, glm::u8vec4(255, 128, 0, 255));
-
-        // Test Sector commands (Middle row, center)
-        mRenderer->DrawSector(glm::vec2(0.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
-                            glm::u8vec4(128, 0, 255, 255));
-        mRenderer->DrawSectorTextureVirtual(glm::vec2(200.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
-                                          texIdGreen, glm::u8vec4(255, 255, 255, 255));
-
-        // Test Arc command (Middle row, right side)
-        mRenderer->DrawArc(glm::vec2(500.0f, 0.0f), 60.0f, 12.0f, 0.0f, 4.71239f,
-                         glm::u8vec4(255, 200, 0, 255));
-
-        // Test Ellipse Sector commands (Bottom row)
-        // Ellipse sector - WITH CLIPPING
-        mRenderer->DrawEllipseSector(glm::vec2(-500.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
-                                   0.0f, 3.14159f, glm::u8vec4(0, 128, 255, 255),
-                                   std::nullopt, &clipRect3);
-        // Textured ellipse sector - WITH CLIPPING
-        mRenderer->DrawEllipseSectorTextureVirtual(glm::vec2(-200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
-                                                 0.0f, 3.14159f, texIdRed,
-                                                 glm::u8vec4(255, 255, 255, 255), std::nullopt, &clipRect3);
-
-        // Test Ellipse Arc command (Bottom row, right side) - NO CLIPPING
-        mRenderer->DrawEllipseArc(glm::vec2(200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.785f,
-                                10.0f, 0.0f, 4.71239f, glm::u8vec4(255, 100, 100, 255));
+        mRenderer->DrawRing(
+            {0.f,0.f},
+            65.f,
+            55.f,
+            glm::u8vec4(127, 127, 255, 255),
+            std::nullopt,
+            &clipRing
+            );
 
         mRenderer->EndRendering();
 

@@ -29,7 +29,7 @@ public:
         Renderer2DDescriptor rendererDesc;
         rendererDesc.Device = mApp->GetNvrhiDevice();
         rendererDesc.OutputSize = {swapchain.GetWidth(), swapchain.GetHeight()};
-        rendererDesc.VirtualSize = {1920.0f, 1080.0f};
+        rendererDesc.VirtualSizeWidth = 1000.f;
 
         mRenderer = std::make_shared<Renderer2D>(rendererDesc);
 
@@ -153,7 +153,6 @@ public:
 
         // Present the renderer's output to the main framebuffer
         mPresenter->Present(commandList, mRenderer->GetTexture(), framebuffer);
-
     }
 
     virtual bool OnEvent(const Event &event) override {

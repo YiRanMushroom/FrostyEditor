@@ -12,6 +12,8 @@ import Core.FileSystem;
 import ImGuiDebugLayer;
 import RendererDevelopmentLayer;
 
+import Editor.EditorLayer;
+
 namespace
 Engine {
     int Main(int argc, char **argv) {
@@ -20,7 +22,7 @@ Engine {
             .Title = "Frosty Engine App"
         });
         app->EmplaceLayer<RendererDevelopmentLayer>();
-        // app->EmplaceLayer<ImGuiDebugTestLayer>();
+        app->EmplaceLayer<Editor::EditorLayer>();
         app->Run();
         app->DetachAllLayers();
         app->Destroy();

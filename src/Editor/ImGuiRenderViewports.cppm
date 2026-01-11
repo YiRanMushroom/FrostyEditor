@@ -14,8 +14,8 @@ namespace Editor {
         }
 
         bool NeedsResize() const {
-            return !mViewportTexture || mViewportTexture.GetTextureDesc().width != mPreviousSize.x ||
-                   mViewportTexture.GetTextureDesc().height != mPreviousSize.y;
+            return !mViewportTexture || mViewportTexture.GetTextureDesc().width != mExpectedSize.x ||
+                   mViewportTexture.GetTextureDesc().height != mExpectedSize.y;
         }
 
         void ShowViewport(bool *open, const char *title = "ImGui Viewport") {
@@ -37,23 +37,18 @@ namespace Editor {
             }
         }
 
-        ImVec2 GetPreviousViewportSize() const {
-            return mPreviousSize;
-        }
-
-        ImVec2 GetExpectedViewportSize() const {
+        [[nodiscard]] const ImVec2& GetExpectedViewportSize() const {
             return mExpectedSize;
         }
 
         void SetViewportTexture(nvrhi::TextureHandle texture) {
             mViewportTexture = ImGui::ImGuiImage::Create(
-                texture,
+                std::move(texture),
                 mDevice->createSampler(nvrhi::SamplerDesc())
             );
         }
 
     private:
-        ImVec2 mPreviousSize{0.0f, 0.0f};
         ImVec2 mExpectedSize{0.0f, 0.0f};
         nvrhi::DeviceHandle mDevice;
         ImGui::ImGuiImage mViewportTexture;

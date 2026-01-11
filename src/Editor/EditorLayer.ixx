@@ -18,7 +18,7 @@ namespace Editor {
             Engine::Renderer2DDescriptor desc{};
             desc.Device = mApp->GetNvrhiDevice();
             desc.OutputSize = {1920, 1080};
-            desc.VirtualSizeWidth = 1000.f;
+            desc.VirtualSizeWidth = 500.f;
             mRenderer = std::make_shared<Engine::Renderer2D>(desc);
         }
 

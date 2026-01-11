@@ -20,9 +20,12 @@ namespace Editor {
 
         void ShowViewport(bool *open, const char *title = "ImGui Viewport") {
             if (*open) {
+                ImGui::SetNextWindowSizeConstraints({150.f, 150.f},
+                    {std::numeric_limits<float>::max(), std::numeric_limits<float>::max()});
+
                 ImGui::Begin(title, open,
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar |
-                             ImGuiWindowFlags_NoScrollWithMouse);
+                             ImGuiWindowFlags_NoScrollWithMouse| ImGuiWindowFlags_NoDocking);
 
                 mExpectedSize = ImGui::GetContentRegionAvail();
 

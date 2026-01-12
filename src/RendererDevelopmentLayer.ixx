@@ -30,7 +30,7 @@ public:
         rendererDesc.OutputSize = {swapchain.GetWidth(), swapchain.GetHeight()};
         rendererDesc.VirtualSizeWidth = 1000.f;
 
-        mRenderer = std::make_shared<Renderer2DMain>(rendererDesc, mApp->GetNvrhiDevice());
+        mRenderer = std::make_shared<Renderer2D>(rendererDesc, mApp->GetNvrhiDevice());
 
         mPresenter = std::make_shared<FramebufferPresenter>(mApp->GetNvrhiDevice().Get(),
                                                             swapchain.GetFramebufferInfo());
@@ -113,7 +113,7 @@ public:
         // Test Line commands (Top row, center-right)
         mRenderer->DrawLine(glm::vec2(50.0f, -350.0f), glm::vec2(150.0f, -350.0f), glm::u8vec4(255, 255, 0, 255));
         mRenderer->DrawLine(glm::vec2(50.0f, -320.0f), glm::vec2(150.0f, -260.0f),
-                          glm::u8vec4(255, 0, 0, 255), glm::u8vec4(0, 0, 255, 255));
+                          glm::u8vec4(0, 0, 255, 255));
 
         // Test Circle commands (Top row, right side)
         mRenderer->DrawCircle(glm::vec2(350.0f, -300.0f), 50.0f, glm::u8vec4(255, 0, 255, 255));
@@ -167,7 +167,7 @@ public:
     }
 
 private:
-    std::shared_ptr<Renderer2DMain> mRenderer;
+    std::shared_ptr<Renderer2D> mRenderer;
     std::shared_ptr<FramebufferPresenter> mPresenter;
 
     nvrhi::TextureHandle CreateSolidColorTexture(nvrhi::IDevice *device, nvrhi::ICommandList *cl, nvrhi::Color color,

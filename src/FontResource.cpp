@@ -75,7 +75,7 @@ std::unique_ptr<FontAtlasData> GenerateFontAtlas(const GenerateFontAtlasInfo& in
     TightAtlasPacker packer;
     packer.setDimensionsConstraint(info.DimensionsConstraint);
     packer.setMinimumScale(info.MinimumScale);
-    packer.setPixelRange(info.PixelRange.lower);
+    packer.setPixelRange(info.PixelRange);
     packer.setMiterLimit(info.MiterLimit);
     packer.pack(allGlyphs.data(), static_cast<int>(allGlyphs.size()));
 
@@ -92,7 +92,7 @@ std::unique_ptr<FontAtlasData> GenerateFontAtlas(const GenerateFontAtlasInfo& in
     auto result = std::make_unique<FontAtlasData>();
     result->AtlasWidth = static_cast<uint32_t>(width);
     result->AtlasHeight = static_cast<uint32_t>(height);
-    result->MSDFPixelRange = static_cast<float>(info.PixelRange.lower);
+    result->MSDFPixelRange = static_cast<float>(info.PixelRange);
 
     // 6. Access storage using your specified method
     // This triggers the conversion or copy based on your BitmapAtlasStorage implementation
@@ -103,18 +103,22 @@ std::unique_ptr<FontAtlasData> GenerateFontAtlas(const GenerateFontAtlasInfo& in
 
     // 7. Convert RGB to RGBA for NVRHI compatibility
     size_t pixelCount = static_cast<size_t>(width) * height;
-    result->AtlasBitmapData = std::make_unique<uint8_t[]>(pixelCount * 4);
-    uint8_t* rgbaBuffer = result->AtlasBitmapData.get();
+    result->AtlasBitmapData = std::make_unique<uint32_t[]>(pixelCount);
+    result->PixelCount = static_cast<uint32_t>(pixelCount);
+    uint32_t* rgbaBuffer = result->AtlasBitmapData.get();
 
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
-            const unsigned char* rgb = bitmapPtr(x, y);
-            size_t targetIndex = (static_cast<size_t>(y) * width + x) * 4;
+            auto data = bitmapPtr(x, y);
+            unsigned char r = data[0];
+            unsigned char g = data[1];
+            unsigned char b = data[2];
+            unsigned char a = 255;
 
-            rgbaBuffer[targetIndex + 0] = rgb[0]; // R
-            rgbaBuffer[targetIndex + 1] = rgb[1]; // G
-            rgbaBuffer[targetIndex + 2] = rgb[2]; // B
-            rgbaBuffer[targetIndex + 3] = 255;    // A (Solid)
+            size_t index = static_cast<size_t>(y) * width + x;
+            // On little-endian systems, uint32_t is stored as [LSB...MSB]
+            // For RGBA8_UNORM, we need bytes in memory as: R, G, B, A
+            rgbaBuffer[index] = r | (g << 8) | (b << 16) | (a << 24);
         }
     }
 

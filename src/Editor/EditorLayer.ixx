@@ -5,6 +5,8 @@ import Core.Prelude;
 import Vendor.ApplicationAPI;
 import Editor.ImGuiRenderViewports;
 import Render.Renderer2D;
+import Core.Utilities;
+import FontResource;
 
 namespace Editor {
     export class EditorLayer : public Engine::Layer {
@@ -20,45 +22,28 @@ namespace Editor {
             desc.OutputSize = {1920, 1080};
             desc.VirtualSizeWidth = 500.f;
             mRenderer = std::make_shared<Engine::Renderer2D>(desc);
+
+            InitializeFontAsync();
         }
 
         virtual ~EditorLayer() override = default;
 
-        void OnUpdate(std::chrono::duration<float> deltaTime) override {
-            Layer::OnUpdate(deltaTime);
+        void OnUpdate(std::chrono::duration<float> deltaTime) override;
 
-            auto virtualSize = mRenderer->BeginRendering({
-                .ClearColor = nvrhi::Color(0.f, 255.f, 255.f, 255.f)
-            });
-
-            auto commandList = mRenderer->GetCommandList();
-
-            Engine::ClipRegion region = Engine::ClipRegion::Quad(
-                {
-                    {-25.f, 25.f}, {25.f, 25.f},
-                    {25.f, -25.f}, {-25.f, -25.f}
-                }, Engine::ClipMode::ShowOutside);
-
-            mRenderer->DrawCircle({0.f, 0.f}, 100.f,
-                                  {255, 0, 255, 255}, std::nullopt, &region);
-
-            mRenderer->EndRendering();
-
-            mSceneViewport.ShowViewport(&mShowSceneViewport, "Scene Viewport");
-
-            if (mSceneViewport.NeedsResize()) {
-                auto size = mSceneViewport.GetExpectedViewportSize();
-                if (size.x > 0.0f && size.y > 0.0f) {
-                    mRenderer->OnResize(static_cast<uint32_t>(size.x), static_cast<uint32_t>(size.y));
-                    mSceneViewport.SetViewportTexture(mRenderer->GetTexture());
-                }
-            }
-        }
+        void OnDetach() override;
 
     private:
+        void InitializeFontAsync();
+
         bool mShowSceneViewport{true};
 
         ImGuiRenderViewport mSceneViewport;
         std::shared_ptr<Engine::Renderer2D> mRenderer;
+
+        Engine::Initializer mFontInitializer;
+        std::shared_ptr<FontAtlasData> mFontData;
+        nvrhi::TextureHandle mFontTexture;
     };
+
+
 }

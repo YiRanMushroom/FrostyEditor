@@ -22,12 +22,6 @@ namespace Editor {
 
         auto commandList = mRenderer->GetCommandList();
 
-        commandList->clearTextureFloat(
-            mRenderer->GetTexture(),
-            nvrhi::AllSubresources,
-            nvrhi::Color(0.5f, 0.0f, 0.5f, 1.0f)
-        );
-
         uint32_t fontTextureID = mRenderer->RegisterVirtualTextureForThisFrame(mFontTexture);
 
         // render the font atlas in black from -100, -100 to 100, 100

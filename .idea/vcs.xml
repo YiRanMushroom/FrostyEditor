@@ -11,5 +11,11 @@
     <mapping directory="$PROJECT_DIR$/FrostyCore/vendor/nvrhi/rtxmu" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/FrostyCore/vendor/nvrhi/thirdparty/Vulkan-Headers" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/FrostyCore/vendor/sdl3" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/freetype-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/freetype-src/subprojects/dlg" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/freetype-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/freetype-src/subprojects/dlg" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-relwithdebinfo/_deps/freetype-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-relwithdebinfo/_deps/freetype-src/subprojects/dlg" vcs="Git" />
   </component>
 </project>

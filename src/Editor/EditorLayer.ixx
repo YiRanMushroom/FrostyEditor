@@ -27,14 +27,11 @@ namespace Editor {
         void OnUpdate(std::chrono::duration<float> deltaTime) override {
             Layer::OnUpdate(deltaTime);
 
-            auto virtualSize = mRenderer->BeginRendering();
+            auto virtualSize = mRenderer->BeginRendering({
+                .ClearColor = nvrhi::Color(0.f, 255.f, 255.f, 255.f)
+            });
 
             auto commandList = mRenderer->GetCommandList();
-            commandList->clearTextureFloat(
-                mRenderer->GetTexture(),
-                nvrhi::AllSubresources,
-                nvrhi::Color(0.5f, 0.0f, 0.5f, 1.0f)
-            );
 
             Engine::ClipRegion region = Engine::ClipRegion::Quad(
                 {
@@ -42,7 +39,8 @@ namespace Editor {
                     {25.f, -25.f}, {-25.f, -25.f}
                 }, Engine::ClipMode::ShowOutside);
 
-            mRenderer->DrawCircle({0.f, 0.f}, 100.f, {255, 0, 255, 255}, std::nullopt, &region);
+            mRenderer->DrawCircle({0.f, 0.f}, 100.f,
+                                  {255, 0, 255, 255}, std::nullopt, &region);
 
             mRenderer->EndRendering();
 

@@ -2,8 +2,12 @@ cmake_minimum_required(VERSION 4.1)
 project(FrostyEditor)
 
 set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-add_executable(FrostyEditor src/main.cpp)
+add_executable(FrostyEditor src/main.cpp
+        src/FontResource.ixx
+        src/FontResource.cpp)
+
 
 file(GLOB_RECURSE IMPL_UNITS "src/*.cpp")
 file(GLOB_RECURSE INTERFACE_UNITS "src/*.ixx" "src/*.cppm")
@@ -46,4 +50,11 @@ target_compile_definitions(
         ${PROJECT_NAME}
         PUBLIC
         "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1"
+)
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/runtime"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+        COMMENT "Copying runtime assets to build directory..."
 )

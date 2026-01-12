@@ -18,10 +18,9 @@ namespace Editor {
 
             mSceneViewport.Init(mApp->GetNvrhiDevice());
             Engine::Renderer2DDescriptor desc{};
-            desc.Device = mApp->GetNvrhiDevice();
             desc.OutputSize = {1920, 1080};
             desc.VirtualSizeWidth = 500.f;
-            mRenderer = std::make_shared<Engine::Renderer2D>(desc);
+            mRenderer = std::make_shared<Engine::Renderer2DMain>(desc, mApp->GetNvrhiDevice());
 
             InitializeFontAsync();
         }
@@ -38,7 +37,7 @@ namespace Editor {
         bool mShowSceneViewport{true};
 
         ImGuiRenderViewport mSceneViewport;
-        std::shared_ptr<Engine::Renderer2D> mRenderer;
+        std::shared_ptr<Engine::Renderer2DMain> mRenderer;
 
         Engine::Initializer mFontInitializer;
         std::shared_ptr<FontAtlasData> mFontData;

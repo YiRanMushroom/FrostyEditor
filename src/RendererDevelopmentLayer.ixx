@@ -27,11 +27,10 @@ public:
         auto &swapchain = mApp->GetSwapchainData();
 
         Renderer2DDescriptor rendererDesc;
-        rendererDesc.Device = mApp->GetNvrhiDevice();
         rendererDesc.OutputSize = {swapchain.GetWidth(), swapchain.GetHeight()};
         rendererDesc.VirtualSizeWidth = 1000.f;
 
-        mRenderer = std::make_shared<Renderer2D>(rendererDesc);
+        mRenderer = std::make_shared<Renderer2DMain>(rendererDesc, mApp->GetNvrhiDevice());
 
         mPresenter = std::make_shared<FramebufferPresenter>(mApp->GetNvrhiDevice().Get(),
                                                             swapchain.GetFramebufferInfo());
@@ -168,7 +167,7 @@ public:
     }
 
 private:
-    std::shared_ptr<Renderer2D> mRenderer;
+    std::shared_ptr<Renderer2DMain> mRenderer;
     std::shared_ptr<FramebufferPresenter> mPresenter;
 
     nvrhi::TextureHandle CreateSolidColorTexture(nvrhi::IDevice *device, nvrhi::ICommandList *cl, nvrhi::Color color,

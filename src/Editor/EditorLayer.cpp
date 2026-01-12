@@ -53,13 +53,13 @@ namespace Editor {
     }
 
     void EditorLayer::OnDetach() {
-        Layer::OnDetach();
-
         mFontInitializer.Reset();
         mSceneViewport = {};
         mRenderer.reset();
         mFontData.reset();
         mFontTexture.Reset();
+
+        Layer::OnDetach();
     }
 
     void EditorLayer::InitializeFontAsync() {

@@ -25,13 +25,36 @@ namespace Editor {
         uint32_t fontTextureID = mRenderer->RegisterVirtualTextureForThisFrame(mFontTexture);
 
         // render the font atlas in black from -100, -100 to 100, 100
-        mRenderer->DrawQuadFontColoredVirtual({
-            {-100.f, 100.f}, {100.f, 100.f},
-            {100.f, -100.f}, {-100.f, -100.f}
-        },{
-            {0.f, 0.f}, {1.f, 0.f},
-            {1.f, 1.f}, {0.f, 1.f}
-        }, fontTextureID, {0, 0, 0, 255}, mFontData->MSDFPixelRange, std::nullopt);
+
+        int clipRegionIndex = mRenderer->GetClipRegionManager().RegisterClipRegion(
+            {
+                .Points = {
+                    {-50.f, -50.f},
+                    {50.f, -50.f},
+                    {50.f, 50.f},
+                    {-50.f, 50.f}
+                },
+                .PointCount = 4,
+                .ClipMode = Engine::ClipMode::ShowOutside
+            }
+        );
+
+        Engine::QuadDrawCommand quadCmd;
+        quadCmd.SetFirstPoint({-100.f, 100.f})
+                .SetSecondPoint({100.f, -100.f})
+                .SetFontAtlas(fontTextureID, mFontData->MSDFPixelRange)
+                .SetTintColor({255, 255, 255, 255})
+                .SetClipRegionId(clipRegionIndex);
+
+        // mRenderer->DrawQuadFontColoredVirtual({
+        //     {-100.f, 100.f}, {100.f, 100.f},
+        //     {100.f, -100.f}, {-100.f, -100.f}
+        // },{
+        //     {0.f, 0.f}, {1.f, 0.f},
+        //     {1.f, 1.f}, {0.f, 1.f}
+        // }, fontTextureID, {0, 0, 0, 255}, mFontData->MSDFPixelRange, std::nullopt);
+
+        mRenderer->Draw(quadCmd);
 
         mRenderer->EndRendering();
 
@@ -97,7 +120,7 @@ namespace Editor {
                 imageDesc.width = mFontData->AtlasWidth;
                 imageDesc.height = mFontData->AtlasHeight;
                 imageDesc.imageData = std::span(
-                    reinterpret_cast<const uint32_t*>(mFontData->AtlasBitmapData.get()), mFontData->PixelCount);
+                    reinterpret_cast<const uint32_t *>(mFontData->AtlasBitmapData.get()), mFontData->PixelCount);
                 imageDesc.debugName = "FontAtlasTexture";
 
                 auto Device = mApp->GetNvrhiDevice();

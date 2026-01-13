@@ -19,22 +19,25 @@ export struct FontAtlasData {
     uint32_t PixelCount = 0;
     uint32_t AtlasWidth = 0;
     uint32_t AtlasHeight = 0;
-    float MSDFPixelRange = 4.0f;
+    float MTSDFPixelRange = 8.0f;
 
-    void SetMetrics(uint32_t unicodeCodepoint, const GlyphMetrics& metrics);
-    [[nodiscard]] const GlyphMetrics& ReadMetrics(uint32_t unicodeCodepoint) const;
-    [[nodiscard]] const GlyphMetrics* ReadMetricsSafe(uint32_t unicodeCodepoint) const;
+    void SetMetrics(uint32_t unicodeCodepoint, const GlyphMetrics &metrics);
+
+    [[nodiscard]] const GlyphMetrics &ReadMetrics(uint32_t unicodeCodepoint) const;
+
+    [[nodiscard]] const GlyphMetrics *ReadMetricsSafe(uint32_t unicodeCodepoint) const;
 
 private:
     void EnsureCapacityForCodepoint(uint32_t unicodeCodepoint);
 };
 
 export struct GenerateFontAtlasInfo {
-    std::vector<std::pair<msdfgen::FontHandle*, std::vector<msdf_atlas::Charset>>> FontsToBake;
+    std::vector<std::pair<msdfgen::FontHandle *, std::vector<msdf_atlas::Charset>>> FontsToBake;
     double MinimumScale = 32.0;
     double PixelRange = 4.0;
     double MiterLimit = 1.0;
     msdf_atlas::DimensionsConstraint DimensionsConstraint = msdf_atlas::DimensionsConstraint::POWER_OF_TWO_SQUARE;
+    uint32_t ParallelThreadCount = 4; // optimal for 256 character set
 };
 
-export std::unique_ptr<FontAtlasData> GenerateFontAtlas(const GenerateFontAtlasInfo& info);
+export std::unique_ptr<FontAtlasData> GenerateFontAtlas(const GenerateFontAtlasInfo &info);

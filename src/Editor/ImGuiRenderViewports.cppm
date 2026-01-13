@@ -21,11 +21,14 @@ namespace Editor {
         void ShowViewport(bool *open, const char *title = "ImGui Viewport") {
             if (*open) {
                 ImGui::SetNextWindowSizeConstraints({150.f, 150.f},
-                    {std::numeric_limits<float>::max(), std::numeric_limits<float>::max()});
+                                                    {
+                                                        std::numeric_limits<float>::max(),
+                                                        std::numeric_limits<float>::max()
+                                                    });
 
                 ImGui::Begin(title, open,
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar |
-                             ImGuiWindowFlags_NoScrollWithMouse| ImGuiWindowFlags_NoDocking);
+                             ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoDocking);
 
                 mExpectedSize = ImGui::GetContentRegionAvail();
 
@@ -37,14 +40,14 @@ namespace Editor {
             }
         }
 
-        [[nodiscard]] const ImVec2& GetExpectedViewportSize() const {
+        [[nodiscard]] const ImVec2 &GetExpectedViewportSize() const {
             return mExpectedSize;
         }
 
         void SetViewportTexture(nvrhi::TextureHandle texture) {
             mViewportTexture = ImGui::ImGuiImage::Create(
                 std::move(texture),
-                mDevice->createSampler(nvrhi::SamplerDesc())
+                mDevice->createSampler(nvrhi::SamplerDesc{}.setAllFilters(true))
             );
         }
 

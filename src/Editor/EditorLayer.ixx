@@ -43,6 +43,4 @@ namespace Editor {
         std::shared_ptr<FontAtlasData> mFontData;
         nvrhi::TextureHandle mFontTexture;
     };
-
-
 }

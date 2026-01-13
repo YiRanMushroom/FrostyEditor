@@ -75,7 +75,6 @@ public:
 
     virtual void OnRender(const nvrhi::CommandListHandle &commandList,
                           const nvrhi::FramebufferHandle &framebuffer, uint32_t frameIndex) override {
-
         mRenderer->BeginRendering();
 
         uint32_t texIdRed = mRenderer->RegisterVirtualTextureForThisFrame(mRedTextureHandle);
@@ -113,7 +112,7 @@ public:
         // Test Line commands (Top row, center-right)
         mRenderer->DrawLine(glm::vec2(50.0f, -350.0f), glm::vec2(150.0f, -350.0f), glm::u8vec4(255, 255, 0, 255));
         mRenderer->DrawLine(glm::vec2(50.0f, -320.0f), glm::vec2(150.0f, -260.0f),
-                          glm::u8vec4(0, 0, 255, 255));
+                            glm::u8vec4(0, 0, 255, 255));
 
         // Test Circle commands (Top row, right side)
         mRenderer->DrawCircle(glm::vec2(350.0f, -300.0f), 50.0f, glm::u8vec4(255, 0, 255, 255));
@@ -121,32 +120,32 @@ public:
 
         // Test Ellipse commands (Middle row, left side)
         mRenderer->DrawEllipse(glm::vec2(-700.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.785f,
-                             glm::u8vec4(0, 255, 255, 255));
+                               glm::u8vec4(0, 255, 255, 255));
         mRenderer->DrawEllipseTextureVirtual(glm::vec2(-500.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.0f,
-                                            texIdRed, glm::u8vec4(255, 255, 255, 200));
+                                             texIdRed, glm::u8vec4(255, 255, 255, 200));
 
         // Test Ring command (Middle row, center-left)
         mRenderer->DrawRing(glm::vec2(-250.0f, 0.0f), 60.0f, 40.0f, glm::u8vec4(255, 128, 0, 255));
 
         // Test Sector commands (Middle row, center)
         mRenderer->DrawSector(glm::vec2(0.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
-                            glm::u8vec4(128, 0, 255, 255));
+                              glm::u8vec4(128, 0, 255, 255));
         mRenderer->DrawSectorTextureVirtual(glm::vec2(200.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
-                                          texIdGreen, glm::u8vec4(255, 255, 255, 255));
+                                            texIdGreen, glm::u8vec4(255, 255, 255, 255));
 
         // Test Arc command (Middle row, right side)
         mRenderer->DrawArc(glm::vec2(500.0f, 0.0f), 60.0f, 12.0f, 0.0f, 4.71239f,
-                         glm::u8vec4(255, 200, 0, 255));
+                           glm::u8vec4(255, 200, 0, 255));
 
         // Test Ellipse Sector commands (Bottom row)
         mRenderer->DrawEllipseSector(glm::vec2(-500.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
-                                   0.0f, 3.14159f, glm::u8vec4(0, 128, 255, 255));
+                                     0.0f, 3.14159f, glm::u8vec4(0, 128, 255, 255));
         mRenderer->DrawEllipseSectorTextureVirtual(glm::vec2(-200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
-                                                 0.0f, 3.14159f, texIdRed);
+                                                   0.0f, 3.14159f, texIdRed);
 
         // Test Ellipse Arc command (Bottom row, right side)
         mRenderer->DrawEllipseArc(glm::vec2(200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.785f,
-                                10.0f, 0.0f, 4.71239f, glm::u8vec4(255, 100, 100, 255));
+                                  10.0f, 0.0f, 4.71239f, glm::u8vec4(255, 100, 100, 255));
 
         mRenderer->EndRendering();
 

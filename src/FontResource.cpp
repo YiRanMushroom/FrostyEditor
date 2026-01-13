@@ -52,22 +52,22 @@ const GlyphMetrics *FontAtlasData::ReadMetricsSafe(uint32_t cp) const {
     return &*l3[i3];
 }
 
-std::unique_ptr<FontAtlasData> GenerateFontAtlas(const GenerateFontAtlasInfo& info) {
+std::unique_ptr<FontAtlasData> GenerateFontAtlas(const GenerateFontAtlasInfo &info) {
     using namespace msdf_atlas;
 
     // 1. Gather glyphs from all fonts and charsets
     std::vector<GlyphGeometry> allGlyphs;
-    for (const auto& fontEntry : info.FontsToBake) {
-        msdfgen::FontHandle* fontHandle = fontEntry.first;
+    for (const auto &fontEntry: info.FontsToBake) {
+        msdfgen::FontHandle *fontHandle = fontEntry.first;
         FontGeometry fontGeometry(&allGlyphs);
 
-        for (const auto& charset : fontEntry.second) {
+        for (const auto &charset: fontEntry.second) {
             fontGeometry.loadCharset(fontHandle, 1.0, charset);
         }
     }
 
     // 2. Apply MSDF edge coloring
-    for (GlyphGeometry& glyph : allGlyphs) {
+    for (GlyphGeometry &glyph: allGlyphs) {
         glyph.edgeColoring(&msdfgen::edgeColoringInkTrap, 3.0, 0);
     }
 
@@ -83,7 +83,8 @@ std::unique_ptr<FontAtlasData> GenerateFontAtlas(const GenerateFontAtlasInfo& in
     packer.getDimensions(width, height);
 
     // 4. Generate MSDF pixels (RGB)
-    ImmediateAtlasGenerator<float, 3, msdfGenerator, BitmapAtlasStorage<uint8_t, 3>> generator(width, height);
+    ImmediateAtlasGenerator<float, 4, mtsdfGenerator, BitmapAtlasStorage<uint8_t, 4>> generator(width, height);
+    generator.setThreadCount(info.ParallelThreadCount);
     GeneratorAttributes attributes;
     generator.setAttributes(attributes);
     generator.generate(allGlyphs.data(), static_cast<int>(allGlyphs.size()));
@@ -92,20 +93,20 @@ std::unique_ptr<FontAtlasData> GenerateFontAtlas(const GenerateFontAtlasInfo& in
     auto result = std::make_unique<FontAtlasData>();
     result->AtlasWidth = static_cast<uint32_t>(width);
     result->AtlasHeight = static_cast<uint32_t>(height);
-    result->MSDFPixelRange = static_cast<float>(info.PixelRange);
+    result->MTSDFPixelRange = static_cast<float>(info.PixelRange);
 
     // 6. Access storage using your specified method
     // This triggers the conversion or copy based on your BitmapAtlasStorage implementation
-    BitmapAtlasStorage<unsigned char, 3> atlasRef = generator.atlasStorage();
+    BitmapAtlasStorage<unsigned char, 4> atlasRef = generator.atlasStorage();
 
     // Cast to BitmapRef to access raw pixels via (x, y) coordinates
-    msdfgen::BitmapRef<unsigned char, 3> bitmapPtr = static_cast<msdfgen::BitmapRef<unsigned char, 3>>(atlasRef);
+    msdfgen::BitmapRef<unsigned char, 4> bitmapPtr = static_cast<msdfgen::BitmapRef<unsigned char, 4>>(atlasRef);
 
     // 7. Convert RGB to RGBA for NVRHI compatibility
     size_t pixelCount = static_cast<size_t>(width) * height;
     result->AtlasBitmapData = std::make_unique<uint32_t[]>(pixelCount);
     result->PixelCount = static_cast<uint32_t>(pixelCount);
-    uint32_t* rgbaBuffer = result->AtlasBitmapData.get();
+    uint32_t *rgbaBuffer = result->AtlasBitmapData.get();
 
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
@@ -113,7 +114,7 @@ std::unique_ptr<FontAtlasData> GenerateFontAtlas(const GenerateFontAtlasInfo& in
             unsigned char r = data[0];
             unsigned char g = data[1];
             unsigned char b = data[2];
-            unsigned char a = 255;
+            unsigned char a = data[3]; // Alpha channel from MTSDF
 
             size_t index = static_cast<size_t>(y) * width + x;
             // On little-endian systems, uint32_t is stored as [LSB...MSB]
@@ -123,19 +124,19 @@ std::unique_ptr<FontAtlasData> GenerateFontAtlas(const GenerateFontAtlasInfo& in
     }
 
     // 8. Populate Glyph Metrics in the 4-level paging system
-    for (const auto& glyph : allGlyphs) {
+    for (const auto &glyph: allGlyphs) {
         GlyphMetrics metrics;
 
         // Compute UVs (Normalized coordinates for Shader)
         double al, ab, ar, at;
         glyph.getQuadAtlasBounds(al, ab, ar, at);
         metrics.BottomLeftUV = glm::vec2(al / width, ab / height);
-        metrics.TopRightUV   = glm::vec2(ar / width, at / height);
+        metrics.TopRightUV = glm::vec2(ar / width, at / height);
 
         // Compute Quad Geometry (Relative to Font Size)
         double pl, pb, pr, pt;
         glyph.getQuadPlaneBounds(pl, pb, pr, pt);
-        metrics.Size   = glm::vec2(pr - pl, pt - pb);
+        metrics.Size = glm::vec2(pr - pl, pt - pb);
         metrics.Offset = glm::vec2(pl, pb);
         metrics.Advance = static_cast<float>(glyph.getAdvance());
 

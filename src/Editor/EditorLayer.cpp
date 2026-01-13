@@ -42,7 +42,7 @@ namespace Editor {
         Engine::QuadDrawCommand quadCmd;
         quadCmd.SetFirstPoint({-100.f, 100.f})
                 .SetSecondPoint({100.f, -100.f})
-                .SetFontAtlas(fontTextureID, mFontData->MSDFPixelRange)
+                .SetFontAtlas(fontTextureID, mFontData->MTSDFPixelRange)
                 .SetTintColor({255, 255, 255, 255})
                 .SetClipRegionId(clipRegionIndex);
 

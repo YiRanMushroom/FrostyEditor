@@ -36,6 +36,8 @@ public:
 
         mRenderer = std::make_shared<Renderer2D>(rendererDesc, mApp->GetNvrhiDevice());
 
+        auto info = swapchain.GetFramebufferInfo();
+
         mPresenter = std::make_shared<FramebufferPresenter>(mApp->GetNvrhiDevice().Get(),
                                                             swapchain.GetFramebufferInfo());
 
@@ -175,6 +177,28 @@ public:
                     .SetVirtualFontTextureId(fontTextureID);
 
             mRenderer->Draw(textCmd);
+
+            // Engine::ClipRegion clipRegion;
+            // clipRegion.Points = {
+            //     {-256.f, -256.f},
+            //     {256.f, -256.f},
+            //     {256.f, 256.f},
+            //     {-256.f, 256.f}
+            // };
+            // clipRegion.PointCount = 4;
+            // clipRegion.ClipMode = Engine::ClipMode::ShowInside;
+            // int clipRegionId = mRenderer->GetClipRegionManager().RegisterClipRegion(clipRegion);
+            //
+            // Engine::QuadDrawCommand quadCmd;
+            // quadCmd.SetFontAtlas(fontTextureID, mFontData->MTSDFPixelRange)
+            //         .SetFirstPoint({-256.f, -256.f})
+            //         .SetSecondPoint({256.f, 256.f})
+            //         .SetFirstUV({0.f, 0.f})
+            //         .SetSecondUV({1.f, 1.f})
+            //         .SetTintColor({0, 0, 0, 255})
+            //         .SetClipRegionId(clipRegionId);
+            //
+            // mRenderer->Draw(quadCmd);
         }
 
         mRenderer->EndRendering();

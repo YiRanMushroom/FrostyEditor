@@ -33,8 +33,7 @@ namespace Editor {
                 mExpectedSize = ImGui::GetContentRegionAvail();
 
                 if (mViewportTexture) {
-                    ImGui::ImageAutoManaged(mViewportTexture, ImGui::GetContentRegionAvail(), ImVec2(0.0f, 1.0f),
-                                            ImVec2(1.0f, 0.0f));
+                    ImGui::ImageAutoManaged(mViewportTexture, ImGui::GetContentRegionAvail());
                 }
 
                 ImGui::End();

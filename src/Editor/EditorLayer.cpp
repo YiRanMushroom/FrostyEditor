@@ -14,13 +14,12 @@ namespace Editor {
     void EditorLayer::OnUpdate(std::chrono::duration<float> deltaTime) {
         Layer::OnUpdate(deltaTime);
 
-        if (!mFontInitializer) {
-            return;
-        }
-
         auto virtualSize = mRenderer->BeginRendering();
 
-        auto commandList = mRenderer->GetCommandList();
+        mRenderer->DrawTriangleColored(
+            glm::mat3x2(0.f, -100.f, -50.f, 0.f, 50.f, 0.f), // show face upward
+            glm::u8vec4(255, 0, 0, 255)
+        );
 
         mRenderer->EndRendering();
 

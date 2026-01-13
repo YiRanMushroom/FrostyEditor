@@ -22,7 +22,7 @@ Engine {
             .Title = "Frosty Engine App"
         });
         app->EmplaceLayer<RendererDevelopmentLayer>();
-        // app->EmplaceLayer<Editor::EditorLayer>();
+        app->EmplaceLayer<Editor::EditorLayer>();
         app->Run();
         app->DetachAllLayers();
         app->Destroy();

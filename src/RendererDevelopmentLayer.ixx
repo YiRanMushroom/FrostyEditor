@@ -17,6 +17,10 @@ import Render.GeneratedShaders;
 import Render.FramebufferPresenter;
 import Render.VirtualTextureManager;
 import Render.Renderer2D;
+import Render.FontResource;
+import Core.Utilities;
+
+import Render.FontRenderer;
 
 using namespace Engine;
 
@@ -63,6 +67,8 @@ public:
 
         commandList->close();
         device->executeCommandList(commandList);
+
+        InitializeFontAsync();
     }
 
     virtual void OnUpdate(std::chrono::duration<float> deltaTime) override {
@@ -77,75 +83,99 @@ public:
                           const nvrhi::FramebufferHandle &framebuffer, uint32_t frameIndex) override {
         mRenderer->BeginRendering();
 
-        uint32_t texIdRed = mRenderer->RegisterVirtualTextureForThisFrame(mRedTextureHandle);
-        uint32_t texIdGreen = mRenderer->RegisterVirtualTextureForThisFrame(mGreenTextureHandle);
-        uint32_t texIdBlue = mRenderer->RegisterVirtualTextureForThisFrame(mBlueTextureHandle);
+        // uint32_t texIdRed = mRenderer->RegisterVirtualTextureForThisFrame(mRedTextureHandle);
+        // uint32_t texIdGreen = mRenderer->RegisterVirtualTextureForThisFrame(mGreenTextureHandle);
+        // uint32_t texIdBlue = mRenderer->RegisterVirtualTextureForThisFrame(mBlueTextureHandle);
 
-        // Test Triangle commands (Top row, left side)
-        // Colored triangle
+        // // Test Triangle commands (Top row, left side)
+        // // Colored triangle
+        // mRenderer->DrawTriangleColored(
+        //     glm::mat3x2(-850.0f, -350.0f, -750.0f, -350.0f, -800.0f, -250.0f),
+        //     glm::u8vec4(255, 0, 0, 255)
+        // );
+        //
+        // // Textured triangle with virtual texture
+        // mRenderer->DrawTriangleTextureVirtual(
+        //     glm::mat3x2(-650.0f, -350.0f, -550.0f, -350.0f, -600.0f, -250.0f),
+        //     glm::mat3x2(0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 1.0f),
+        //     texIdRed
+        // );
+        //
+        // // Test Quad commands (Top row, center-left)
+        // // Colored quad
+        // mRenderer->DrawQuadColored(
+        //     glm::mat4x2(-450.0f, -350.0f, -350.0f, -350.0f, -350.0f, -250.0f, -450.0f, -250.0f),
+        //     glm::u8vec4(0, 255, 0, 255)
+        // );
+        //
+        // // Textured quad with virtual texture
+        // mRenderer->DrawQuadTextureVirtual(
+        //     glm::mat4x2(-250.0f, -350.0f, -150.0f, -350.0f, -150.0f, -250.0f, -250.0f, -250.0f),
+        //     glm::mat4x2(0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f),
+        //     texIdGreen
+        // );
+        //
+        // // Test Line commands (Top row, center-right)
+        // mRenderer->DrawLine(glm::vec2(50.0f, -350.0f), glm::vec2(150.0f, -350.0f), glm::u8vec4(255, 255, 0, 255));
+        // mRenderer->DrawLine(glm::vec2(50.0f, -320.0f), glm::vec2(150.0f, -260.0f),
+        //                     glm::u8vec4(0, 0, 255, 255));
+        //
+        // // Test Circle commands (Top row, right side)
+        // mRenderer->DrawCircle(glm::vec2(350.0f, -300.0f), 50.0f, glm::u8vec4(255, 0, 255, 255));
+        // mRenderer->DrawCircleTextureVirtual(glm::vec2(550.0f, -300.0f), 50.0f, texIdBlue);
+        //
+        // // Test Ellipse commands (Middle row, left side)
+        // mRenderer->DrawEllipse(glm::vec2(-700.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.785f,
+        //                        glm::u8vec4(0, 255, 255, 255));
+        // mRenderer->DrawEllipseTextureVirtual(glm::vec2(-500.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.0f,
+        //                                      texIdRed, glm::u8vec4(255, 255, 255, 200));
+        //
+        // // Test Ring command (Middle row, center-left)
+        // mRenderer->DrawRing(glm::vec2(-250.0f, 0.0f), 60.0f, 40.0f, glm::u8vec4(255, 128, 0, 255));
+        //
+        // // Test Sector commands (Middle row, center)
+        // mRenderer->DrawSector(glm::vec2(0.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
+        //                       glm::u8vec4(128, 0, 255, 255));
+        // mRenderer->DrawSectorTextureVirtual(glm::vec2(200.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
+        //                                     texIdGreen, glm::u8vec4(255, 255, 255, 255));
+        //
+        // // Test Arc command (Middle row, right side)
+        // mRenderer->DrawArc(glm::vec2(500.0f, 0.0f), 60.0f, 12.0f, 0.0f, 4.71239f,
+        //                    glm::u8vec4(255, 200, 0, 255));
+        //
+        // // Test Ellipse Sector commands (Bottom row)
+        // mRenderer->DrawEllipseSector(glm::vec2(-500.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
+        //                              0.0f, 3.14159f, glm::u8vec4(0, 128, 255, 255));
+        // mRenderer->DrawEllipseSectorTextureVirtual(glm::vec2(-200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
+        //                                            0.0f, 3.14159f, texIdRed);
+        //
+        // // Test Ellipse Arc command (Bottom row, right side)
+        // mRenderer->DrawEllipseArc(glm::vec2(200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.785f,
+        //                           10.0f, 0.0f, 4.71239f, glm::u8vec4(255, 100, 100, 255));
+
         mRenderer->DrawTriangleColored(
-            glm::mat3x2(-850.0f, -350.0f, -750.0f, -350.0f, -800.0f, -250.0f),
+            glm::mat3x2(0.f, -50.f, -100.f, 50.f, 100.f, 50.f),
             glm::u8vec4(255, 0, 0, 255)
         );
 
-        // Textured triangle with virtual texture
-        mRenderer->DrawTriangleTextureVirtual(
-            glm::mat3x2(-650.0f, -350.0f, -550.0f, -350.0f, -600.0f, -250.0f),
-            glm::mat3x2(0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 1.0f),
-            texIdRed
-        );
+        if (mFontInitializer.IsInitialized()) {
+            uint32_t fontTextureID = mRenderer->RegisterVirtualTextureForThisFrame(mFontTexture);
 
-        // Test Quad commands (Top row, center-left)
-        // Colored quad
-        mRenderer->DrawQuadColored(
-            glm::mat4x2(-450.0f, -350.0f, -350.0f, -350.0f, -350.0f, -250.0f, -450.0f, -250.0f),
-            glm::u8vec4(0, 255, 0, 255)
-        );
+            // render the font atlas in black from -100, -100 to 100, 100
 
-        // Textured quad with virtual texture
-        mRenderer->DrawQuadTextureVirtual(
-            glm::mat4x2(-250.0f, -350.0f, -150.0f, -350.0f, -150.0f, -250.0f, -250.0f, -250.0f),
-            glm::mat4x2(0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f),
-            texIdGreen
-        );
+            Engine::DrawTextAsciiCommand textCmd;
+            textCmd.SetText(
+                        "I Love Furries! \n-- I am Aquafrost.")
+                    .SetStartPosition({-120.f, -100.f})
+                    .SetEndPosition({120.f, 100.f})
+                    .SetClipRegion({-500, 500}, {500, -500})
+                    .SetColor({255, 255, 255, 255})
+                    .SetFontContext(mFontData.get())
+                    .SetFontSize(16.f)
+                    .SetVirtualFontTextureId(fontTextureID);
 
-        // Test Line commands (Top row, center-right)
-        mRenderer->DrawLine(glm::vec2(50.0f, -350.0f), glm::vec2(150.0f, -350.0f), glm::u8vec4(255, 255, 0, 255));
-        mRenderer->DrawLine(glm::vec2(50.0f, -320.0f), glm::vec2(150.0f, -260.0f),
-                            glm::u8vec4(0, 0, 255, 255));
-
-        // Test Circle commands (Top row, right side)
-        mRenderer->DrawCircle(glm::vec2(350.0f, -300.0f), 50.0f, glm::u8vec4(255, 0, 255, 255));
-        mRenderer->DrawCircleTextureVirtual(glm::vec2(550.0f, -300.0f), 50.0f, texIdBlue);
-
-        // Test Ellipse commands (Middle row, left side)
-        mRenderer->DrawEllipse(glm::vec2(-700.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.785f,
-                               glm::u8vec4(0, 255, 255, 255));
-        mRenderer->DrawEllipseTextureVirtual(glm::vec2(-500.0f, 0.0f), glm::vec2(80.0f, 50.0f), 0.0f,
-                                             texIdRed, glm::u8vec4(255, 255, 255, 200));
-
-        // Test Ring command (Middle row, center-left)
-        mRenderer->DrawRing(glm::vec2(-250.0f, 0.0f), 60.0f, 40.0f, glm::u8vec4(255, 128, 0, 255));
-
-        // Test Sector commands (Middle row, center)
-        mRenderer->DrawSector(glm::vec2(0.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
-                              glm::u8vec4(128, 0, 255, 255));
-        mRenderer->DrawSectorTextureVirtual(glm::vec2(200.0f, 0.0f), 60.0f, 0.0f, 3.14159f,
-                                            texIdGreen, glm::u8vec4(255, 255, 255, 255));
-
-        // Test Arc command (Middle row, right side)
-        mRenderer->DrawArc(glm::vec2(500.0f, 0.0f), 60.0f, 12.0f, 0.0f, 4.71239f,
-                           glm::u8vec4(255, 200, 0, 255));
-
-        // Test Ellipse Sector commands (Bottom row)
-        mRenderer->DrawEllipseSector(glm::vec2(-500.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
-                                     0.0f, 3.14159f, glm::u8vec4(0, 128, 255, 255));
-        mRenderer->DrawEllipseSectorTextureVirtual(glm::vec2(-200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.0f,
-                                                   0.0f, 3.14159f, texIdRed);
-
-        // Test Ellipse Arc command (Bottom row, right side)
-        mRenderer->DrawEllipseArc(glm::vec2(200.0f, 300.0f), glm::vec2(80.0f, 50.0f), 0.785f,
-                                  10.0f, 0.0f, 4.71239f, glm::u8vec4(255, 100, 100, 255));
+            mRenderer->Draw(textCmd);
+        }
 
         mRenderer->EndRendering();
 
@@ -198,4 +228,62 @@ private:
     nvrhi::TextureHandle mRedTextureHandle;
     nvrhi::TextureHandle mGreenTextureHandle;
     nvrhi::TextureHandle mBlueTextureHandle;
+
+    void InitializeFontAsync();
+
+    Engine::Initializer mFontInitializer;
+    std::shared_ptr<Engine::FontAtlasData> mFontData;
+    nvrhi::TextureHandle mFontTexture;
 };
+
+void RendererDevelopmentLayer::InitializeFontAsync() {
+    mFontInitializer = {
+        [this] {
+            std::unique_ptr<msdfgen::FreetypeHandle, decltype([](msdfgen::FreetypeHandle *ptr) {
+                    if (ptr) {
+                        msdfgen::deinitializeFreetype(ptr);
+                    }
+                }
+            )> ftLib(msdfgen::initializeFreetype());
+
+            const auto &executablePath = Engine::GetExecutablePath();
+
+            // load font from fonts/JetBrainsMono-Regular.ttf
+
+            auto fontPath = executablePath / "fonts" / "JetBrainsMono-Regular.ttf";
+            std::unique_ptr<msdfgen::FontHandle, decltype([](msdfgen::FontHandle *ptr) {
+                    if (ptr) {
+                        msdfgen::destroyFont(ptr);
+                    }
+                }
+            )> font(nullptr);
+
+            // Initialize
+            if (auto *fontHandle = msdfgen::loadFont(ftLib.get(), fontPath.string().c_str())) {
+                font.reset(fontHandle);
+            } else {
+                throw std::runtime_error("Failed to load font from path: " + fontPath.string());
+            }
+
+            Engine::GenerateFontAtlasInfo atlasInfo;
+            atlasInfo.FontsToBake.push_back({
+                font.get(),
+                {msdf_atlas::Charset::ASCII}
+            });
+
+            mFontData = GenerateFontAtlas(atlasInfo);
+
+            Engine::SimpleGPUImageDescriptor imageDesc{};
+            imageDesc.width = mFontData->AtlasWidth;
+            imageDesc.height = mFontData->AtlasHeight;
+            imageDesc.imageData = std::span(
+                reinterpret_cast<const uint32_t *>(mFontData->AtlasBitmapData.get()), mFontData->PixelCount);
+            imageDesc.debugName = "FontAtlasTexture";
+
+            auto Device = mApp->GetNvrhiDevice();
+            auto commandList = Device->createCommandList();
+
+            mFontTexture = Engine::UploadImageToGPU(imageDesc, Device, commandList);
+        }
+    };
+}

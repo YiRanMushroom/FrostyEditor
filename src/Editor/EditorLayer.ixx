@@ -6,7 +6,8 @@ import Vendor.ApplicationAPI;
 import Editor.ImGuiRenderViewports;
 import Render.Renderer2D;
 import Core.Utilities;
-import FontResource;
+import Render.FontResource;
+import Render.FontRenderer;
 
 namespace Editor {
     export class EditorLayer : public Engine::Layer {
@@ -32,15 +33,15 @@ namespace Editor {
         void OnDetach() override;
 
     private:
-        void InitializeFontAsync();
-
         bool mShowSceneViewport{true};
 
         ImGuiRenderViewport mSceneViewport;
         std::shared_ptr<Engine::Renderer2D> mRenderer;
 
+        void InitializeFontAsync();
+
         Engine::Initializer mFontInitializer;
-        std::shared_ptr<FontAtlasData> mFontData;
+        std::shared_ptr<Engine::FontAtlasData> mFontData;
         nvrhi::TextureHandle mFontTexture;
     };
 }

@@ -4,9 +4,7 @@ project(FrostyEditor)
 set(CMAKE_CXX_STANDARD 23)
 #set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-add_executable(FrostyEditor src/main.cpp
-        src/FontResource.ixx
-        src/FontResource.cpp)
+add_executable(FrostyEditor)
 
 
 file(GLOB_RECURSE IMPL_UNITS "src/*.cpp")

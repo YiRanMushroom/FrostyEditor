@@ -7,7 +7,7 @@ import Editor.ImGuiRenderViewports;
 import Render.Renderer2D;
 import Core.Utilities;
 import Core.FileSystem;
-import FontResource;
+import Render.FontResource;
 import Render.Image;
 
 namespace Editor {
@@ -21,40 +21,6 @@ namespace Editor {
         auto virtualSize = mRenderer->BeginRendering();
 
         auto commandList = mRenderer->GetCommandList();
-
-        uint32_t fontTextureID = mRenderer->RegisterVirtualTextureForThisFrame(mFontTexture);
-
-        // render the font atlas in black from -100, -100 to 100, 100
-
-        int clipRegionIndex = mRenderer->GetClipRegionManager().RegisterClipRegion(
-            {
-                .Points = {
-                    {-50.f, -50.f},
-                    {50.f, -50.f},
-                    {50.f, 50.f},
-                    {-50.f, 50.f}
-                },
-                .PointCount = 4,
-                .ClipMode = Engine::ClipMode::ShowOutside
-            }
-        );
-
-        Engine::QuadDrawCommand quadCmd;
-        quadCmd.SetFirstPoint({-100.f, 100.f})
-                .SetSecondPoint({100.f, -100.f})
-                .SetFontAtlas(fontTextureID, mFontData->MTSDFPixelRange)
-                .SetTintColor({255, 255, 255, 255})
-                .SetClipRegionId(clipRegionIndex);
-
-        // mRenderer->DrawQuadFontColoredVirtual({
-        //     {-100.f, 100.f}, {100.f, 100.f},
-        //     {100.f, -100.f}, {-100.f, -100.f}
-        // },{
-        //     {0.f, 0.f}, {1.f, 0.f},
-        //     {1.f, 1.f}, {0.f, 1.f}
-        // }, fontTextureID, {0, 0, 0, 255}, mFontData->MSDFPixelRange, std::nullopt);
-
-        mRenderer->Draw(quadCmd);
 
         mRenderer->EndRendering();
 
@@ -80,54 +46,6 @@ namespace Editor {
     }
 
     void EditorLayer::InitializeFontAsync() {
-        mFontInitializer = {
-            [this] {
-                std::unique_ptr<msdfgen::FreetypeHandle, decltype([](msdfgen::FreetypeHandle *ptr) {
-                        if (ptr) {
-                            msdfgen::deinitializeFreetype(ptr);
-                        }
-                    }
-                )> ftLib(msdfgen::initializeFreetype());
 
-                const auto &executablePath = Engine::GetExecutablePath();
-
-                // load font from fonts/JetBrainsMono-Regular.ttf
-
-                auto fontPath = executablePath / "fonts" / "JetBrainsMono-Regular.ttf";
-                std::unique_ptr<msdfgen::FontHandle, decltype([](msdfgen::FontHandle *ptr) {
-                        if (ptr) {
-                            msdfgen::destroyFont(ptr);
-                        }
-                    }
-                )> font(nullptr);
-
-                // Initialize
-                if (auto *fontHandle = msdfgen::loadFont(ftLib.get(), fontPath.string().c_str())) {
-                    font.reset(fontHandle);
-                } else {
-                    throw std::runtime_error("Failed to load font from path: " + fontPath.string());
-                }
-
-                GenerateFontAtlasInfo atlasInfo;
-                atlasInfo.FontsToBake.push_back({
-                    font.get(),
-                    {msdf_atlas::Charset::ASCII}
-                });
-
-                mFontData = GenerateFontAtlas(atlasInfo);
-
-                Engine::SimpleGPUImageDescriptor imageDesc{};
-                imageDesc.width = mFontData->AtlasWidth;
-                imageDesc.height = mFontData->AtlasHeight;
-                imageDesc.imageData = std::span(
-                    reinterpret_cast<const uint32_t *>(mFontData->AtlasBitmapData.get()), mFontData->PixelCount);
-                imageDesc.debugName = "FontAtlasTexture";
-
-                auto Device = mApp->GetNvrhiDevice();
-                auto commandList = Device->createCommandList();
-
-                mFontTexture = Engine::UploadImageToGPU(imageDesc, Device, commandList);
-            }
-        };
     }
 }

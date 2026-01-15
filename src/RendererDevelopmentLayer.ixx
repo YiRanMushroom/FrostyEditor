@@ -20,7 +20,7 @@ import Render.Renderer2D;
 import Render.FontResource;
 import Core.Utilities;
 
-import Render.FontRenderer;
+import Render.TextRenderer;
 
 using namespace Engine;
 
@@ -34,7 +34,7 @@ public:
         rendererDesc.OutputSize = {swapchain.GetWidth(), swapchain.GetHeight()};
         rendererDesc.VirtualSizeWidth = 1000.f;
 
-        mRenderer = std::make_shared<Renderer2D>(rendererDesc, mApp->GetNvrhiDevice());
+        mRenderer = Engine::MakeRef<Renderer2D>(rendererDesc, mApp->GetNvrhiDevice());
 
         auto info = swapchain.GetFramebufferInfo();
 
@@ -165,13 +165,12 @@ public:
 
             // render the font atlas in black from -100, -100 to 100, 100
 
-            Engine::DrawTextAsciiCommand textCmd;
+            Engine::DrawSimpleTextAsciiCommand textCmd;
             textCmd.SetText(
-                        "I Love Furries! \n-- I am Aquafrost.")
+                        "I am Aquafrost.")
                     .SetStartPosition({-120.f, -100.f})
                     .SetEndPosition({120.f, 100.f})
-                    .SetClipRegion({-500, 500}, {500, -500})
-                    .SetColor({255, 255, 255, 255})
+                    .SetColor({0, 0, 0, 255})
                     .SetFontContext(mFontData.get())
                     .SetFontSize(16.f)
                     .SetVirtualFontTextureId(fontTextureID);
@@ -219,8 +218,10 @@ public:
         return false;
     }
 
+    virtual void OnDetach() override;
+
 private:
-    std::shared_ptr<Renderer2D> mRenderer;
+    Ref<Renderer2D> mRenderer;
     std::shared_ptr<FramebufferPresenter> mPresenter;
 
     nvrhi::TextureHandle CreateSolidColorTexture(nvrhi::IDevice *device, nvrhi::ICommandList *cl, nvrhi::Color color,
@@ -255,10 +256,16 @@ private:
 
     void InitializeFontAsync();
 
-    Engine::Initializer mFontInitializer;
     std::shared_ptr<Engine::FontAtlasData> mFontData;
     nvrhi::TextureHandle mFontTexture;
+    Engine::Initializer mFontInitializer;
 };
+
+void RendererDevelopmentLayer::OnDetach() {
+    mFontInitializer.Reset();
+
+    Layer::OnDetach();
+}
 
 void RendererDevelopmentLayer::InitializeFontAsync() {
     mFontInitializer = {

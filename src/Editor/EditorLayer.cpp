@@ -37,7 +37,7 @@ namespace Editor {
     void EditorLayer::OnDetach() {
         mFontInitializer.Reset();
         mSceneViewport = {};
-        mRenderer.reset();
+        mRenderer.Reset();
         mFontData.reset();
         mFontTexture.Reset();
 

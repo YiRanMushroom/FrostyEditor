@@ -7,7 +7,7 @@ import Editor.ImGuiRenderViewports;
 import Render.Renderer2D;
 import Core.Utilities;
 import Render.FontResource;
-import Render.FontRenderer;
+import Render.TextRenderer;
 
 namespace Editor {
     export class EditorLayer : public Engine::Layer {
@@ -21,7 +21,7 @@ namespace Editor {
             Engine::Renderer2DDescriptor desc{};
             desc.OutputSize = {1920, 1080};
             desc.VirtualSizeWidth = 500.f;
-            mRenderer = std::make_shared<Engine::Renderer2D>(desc, mApp->GetNvrhiDevice());
+            mRenderer = Engine::MakeRef<Engine::Renderer2D>(desc, mApp->GetNvrhiDevice());
 
             InitializeFontAsync();
         }
@@ -36,7 +36,7 @@ namespace Editor {
         bool mShowSceneViewport{true};
 
         ImGuiRenderViewport mSceneViewport;
-        std::shared_ptr<Engine::Renderer2D> mRenderer;
+        Engine::Ref<Engine::Renderer2D> mRenderer;
 
         void InitializeFontAsync();
 

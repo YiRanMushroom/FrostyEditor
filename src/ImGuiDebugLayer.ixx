@@ -11,6 +11,7 @@ import ImGui.ImGui;
 import Render.Image;
 import Core.STLExtension;
 import Core.FileSystem;
+import Core.Coroutine;
 
 using namespace Engine;
 
@@ -29,7 +30,7 @@ public:
 
 
         if (ImGui::Button("Load More Images")) {
-            mLoadingFutures.push_back(OpenDialogAndLoadImagesAsync());
+            mLoadingFutures.push_back(OpenDialogAndLoadImagesAsync().IntoFuture());
         }
 
         ImGui::End();
@@ -42,7 +43,6 @@ public:
                 }
             );
         });
-
 
         std::erase_if(
             mLoadingFutures,
@@ -101,40 +101,42 @@ public:
     void OnRender(const nvrhi::CommandListHandle &commandList,
                   const nvrhi::FramebufferHandle &framebuffer, uint32_t) override {}
 
-    std::future<std::vector<ImGui::ImGuiImage>> OpenDialogAndLoadImagesAsync() {
+    Engine::Awaitable<std::vector<ImGui::ImGuiImage>> OpenDialogAndLoadImagesAsync() {
         SDL_DialogFileFilter filters[] = {
             {.name = "PNG Images", .pattern = "png"},
             {.name = "JPEG Images", .pattern = "jpg;jpeg"},
             {.name = "All Files", .pattern = "*"}
         };
 
-        return OpenFileDialogAsync(mApp->GetWindow().get(), filters)
-               | Then([](std::vector<std::filesystem::path> paths) {
-                   std::vector<CPUSimpleImage> images;
-                   for (const auto &path: paths) {
-                       images.push_back(LoadImageFromFile(path));
-                   }
-                   return images;
-               })
-               | Then([this](std::vector<CPUSimpleImage> cpuImages) {
-                   std::vector<ImGui::ImGuiImage> imguiImages;
-                   auto &device = mApp.get()->GetNvrhiDevice();
+        auto paths = co_await OpenFileDialogAsync(
+            mApp->GetWindow().get(),
+            filters
+        );
 
-                   auto newCommandList = device->createCommandList();
+        std::vector<CPUImage> images;
+        for (const auto &path: paths) {
+            images.push_back(co_await LoadImageFromFileAsync(path));
+        }
 
-                   auto gpuImages = UploadImagesToGPU(
-                       cpuImages | std::views::transform([](const CPUSimpleImage &it) {
-                           return it.GetGPUDescriptor();
-                       }) | std::ranges::to<std::vector<SimpleGPUImageDescriptor>>(),
-                       device.Get(),
-                       newCommandList);
+        auto device = mApp->GetNvrhiDevice();
+        auto commandList = device->createCommandList();
 
-                   return gpuImages | std::views::transform([this](const nvrhi::TextureHandle &tex) {
-                       return ImGui::ImGuiImage::Create(
-                           tex,
-                           static_cast<ImGuiApplication *>(mApp.get())->GetImGuiTextureSampler());
-                   }) | std::ranges::to<std::vector<ImGui::ImGuiImage>>();
-               });
+        auto gpuImages = UploadImagesToGPU(
+            images | std::views::transform([](const CPUImage &it) {
+                return it.GetGPUDescriptor();
+            }) | std::ranges::to<std::vector<GPUImageDescriptor>>(),
+            device.Get(),
+            commandList);
+
+        std::vector<ImGui::ImGuiImage> imguiImages;
+        for (const auto &tex : gpuImages) {
+            imguiImages.push_back(
+                ImGui::ImGuiImage::Create(
+                    tex,
+                    static_cast<ImGuiApplication *>(mApp.get())->GetImGuiTextureSampler()));
+        }
+
+        co_return imguiImages;
     }
 
 private:
@@ -156,7 +158,7 @@ private:
         std::vector<uint32_t> pixels(15 * 15, (a << 24) | (b << 16) | (g << 8) | r);
 
         nvrhi::TextureHandle pinkTexture = UploadImageToGPU(
-            SimpleGPUImageDescriptor{
+            GPUImageDescriptor{
                 .width = 15,
                 .height = 15,
                 .imageData = pixels

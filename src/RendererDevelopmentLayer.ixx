@@ -304,7 +304,7 @@ void RendererDevelopmentLayer::InitializeFontAsync() {
 
             mFontData = GenerateFontAtlas(atlasInfo);
 
-            Engine::SimpleGPUImageDescriptor imageDesc{};
+            Engine::GPUImageDescriptor imageDesc{};
             imageDesc.width = mFontData->AtlasWidth;
             imageDesc.height = mFontData->AtlasHeight;
             imageDesc.imageData = std::span(

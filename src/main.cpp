@@ -23,6 +23,7 @@ Engine {
         });
         app->EmplaceLayer<RendererDevelopmentLayer>();
         app->EmplaceLayer<Editor::EditorLayer>();
+        app->EmplaceLayer<ImGuiDebugTestLayer>();
         app->Run();
         app->DetachAllLayers();
         app->Destroy();

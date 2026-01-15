@@ -12,14 +12,18 @@ import Core.FileSystem;
 import ImGuiDebugLayer;
 import RendererDevelopmentLayer;
 
+import Core.Utilities;
+
 import Editor.EditorLayer;
 
 namespace
 Engine {
     int Main(int argc, char **argv) {
-        auto app = std::make_shared<ImGuiApplication>();
+        auto app = Engine::MakeRef<ImGuiApplication>();
         app->Init({
-            .Title = "Frosty Engine App"
+            .Title = "Frosty Engine App",
+            .Width = 1920,
+            .Height = 1080,
         });
         app->EmplaceLayer<RendererDevelopmentLayer>();
         app->EmplaceLayer<Editor::EditorLayer>();

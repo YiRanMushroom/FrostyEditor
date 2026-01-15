@@ -35,7 +35,7 @@ public:
         // rendererDesc.VirtualSizeWidth = 1000.f;
         Ref<VirtualSizeTransform> virtualSizeTransform =
             Ref<VirtualSizeTransform>::Create();
-        virtualSizeTransform->SetVirtualWidth(1920.f);
+        virtualSizeTransform->SetVirtualWidth(2560.f);
         rendererDesc.Transforms = std::vector<Ref<RefTransform>>{
             virtualSizeTransform
         };
@@ -89,7 +89,9 @@ public:
 
     virtual void OnRender(const nvrhi::CommandListHandle &commandList,
                           const nvrhi::FramebufferHandle &framebuffer, uint32_t frameIndex) override {
-        mRenderer->BeginRendering();
+        mRenderer->BeginRendering({
+            .ClearColor = nvrhi::Color(0.8f, 0.8f, 0.8f, 1.0f)
+        });
 
         // uint32_t texIdRed = mRenderer->RegisterVirtualTextureForThisFrame(mRedTextureHandle);
         // uint32_t texIdGreen = mRenderer->RegisterVirtualTextureForThisFrame(mGreenTextureHandle);
@@ -174,11 +176,11 @@ public:
             Engine::DrawSimpleTextAsciiCommand textCmd;
             textCmd.SetText(
                         "I am Aquafrost.")
-                    .SetStartPosition({-120.f, -100.f})
-                    .SetEndPosition({120.f, 100.f})
+                    .SetStartPosition({-640.f, -100.f})
+                    .SetEndPosition({640.f, 100.f})
                     .SetColor({0, 0, 0, 255})
                     .SetFontContext(mFontData.get())
-                    .SetFontSize(16.f)
+                    .SetFontSize(128.f)
                     .SetVirtualFontTextureId(fontTextureID);
 
             mRenderer->Draw(textCmd);

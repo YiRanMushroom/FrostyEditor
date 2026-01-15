@@ -161,7 +161,10 @@ private:
             GPUImageDescriptor{
                 .width = 15,
                 .height = 15,
-                .imageData = pixels
+                .imageData = std::span(
+                    reinterpret_cast<const uint8_t *>(pixels.data()),
+                    pixels.size() * sizeof(uint32_t)
+                ),
             },
             mNvrhiDevice,
             mApp.get()->GetCommandList()

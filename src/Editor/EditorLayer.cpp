@@ -14,7 +14,7 @@ namespace Editor {
     void EditorLayer::OnUpdate(std::chrono::duration<float> deltaTime) {
         Layer::OnUpdate(deltaTime);
 
-        auto virtualSize = mRenderer->BeginRendering();
+        mRenderer->BeginRendering();
 
         mRenderer->DrawTriangleColored(
             glm::mat3x2(0.f, -100.f, -50.f, 0.f, 50.f, 0.f), // show face upward

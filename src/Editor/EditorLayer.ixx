@@ -8,6 +8,7 @@ import Render.Renderer2D;
 import Core.Utilities;
 import Render.FontResource;
 import Render.TextRenderer;
+import Render.Transform;
 
 namespace Editor {
     export class EditorLayer : public Engine::Layer {
@@ -20,7 +21,12 @@ namespace Editor {
             mSceneViewport.Init(mApp->GetNvrhiDevice());
             Engine::Renderer2DDescriptor desc{};
             desc.OutputSize = {1920, 1080};
-            desc.VirtualSizeWidth = 500.f;
+            Engine::Ref<Engine::VirtualSizeTransform> virtualSizeTransform =
+                Engine::Ref<Engine::VirtualSizeTransform>::Create();
+            virtualSizeTransform->SetVirtualWidth(1920.f);
+            desc.Transforms = std::vector<Engine::Ref<Engine::ITransform>>{
+                virtualSizeTransform
+            };
             mRenderer = Engine::MakeRef<Engine::Renderer2D>(desc, mApp->GetNvrhiDevice());
 
             InitializeFontAsync();

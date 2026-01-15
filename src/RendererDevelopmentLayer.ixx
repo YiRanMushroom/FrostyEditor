@@ -32,7 +32,13 @@ public:
 
         Renderer2DDescriptor rendererDesc;
         rendererDesc.OutputSize = {swapchain.GetWidth(), swapchain.GetHeight()};
-        rendererDesc.VirtualSizeWidth = 1000.f;
+        // rendererDesc.VirtualSizeWidth = 1000.f;
+        Ref<VirtualSizeTransform> virtualSizeTransform =
+            Ref<VirtualSizeTransform>::Create();
+        virtualSizeTransform->SetVirtualWidth(1920.f);
+        rendererDesc.Transforms = std::vector<Ref<ITransform>>{
+            virtualSizeTransform
+        };
 
         mRenderer = Engine::MakeRef<Renderer2D>(rendererDesc, mApp->GetNvrhiDevice());
 
@@ -307,8 +313,7 @@ void RendererDevelopmentLayer::InitializeFontAsync() {
             Engine::GPUImageDescriptor imageDesc{};
             imageDesc.width = mFontData->AtlasWidth;
             imageDesc.height = mFontData->AtlasHeight;
-            imageDesc.imageData = std::span(
-                reinterpret_cast<const uint32_t *>(mFontData->AtlasBitmapData.get()), mFontData->PixelCount);
+            imageDesc.imageData = mFontData->GetAtlasBitmapDataSpan();
             imageDesc.debugName = "FontAtlasTexture";
 
             auto Device = mApp->GetNvrhiDevice();

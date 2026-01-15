@@ -26,7 +26,7 @@ using namespace Engine;
 
 export class RendererDevelopmentLayer : public Layer {
 public:
-    void OnAttach(const std::shared_ptr<Application> &app) override {
+    void OnAttach(const Ref<Application> &app) override {
         Layer::OnAttach(app);
         auto &swapchain = mApp->GetSwapchainData();
 
@@ -36,7 +36,7 @@ public:
         Ref<VirtualSizeTransform> virtualSizeTransform =
             Ref<VirtualSizeTransform>::Create();
         virtualSizeTransform->SetVirtualWidth(1920.f);
-        rendererDesc.Transforms = std::vector<Ref<ITransform>>{
+        rendererDesc.Transforms = std::vector<Ref<RefTransform>>{
             virtualSizeTransform
         };
 

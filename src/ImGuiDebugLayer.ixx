@@ -12,6 +12,7 @@ import Render.Image;
 import Core.STLExtension;
 import Core.FileSystem;
 import Core.Coroutine;
+import Core.Utilities;
 
 using namespace Engine;
 
@@ -83,12 +84,12 @@ public:
         }
     }
 
-    void OnAttach(const std::shared_ptr<Application> &app) override {
+    void OnAttach(const Ref<Application> &app) override {
         Layer::OnAttach(app);
 
         InitMyTexture();
         mImGuiTexture = ImGui::ImGuiImage::Create(
-            mMyTexture, static_cast<ImGuiApplication *>(mApp.get())->GetImGuiTextureSampler());
+            mMyTexture, static_cast<ImGuiApplication *>(mApp.Get())->GetImGuiTextureSampler());
     }
 
     void OnDetach() override {
@@ -133,7 +134,7 @@ public:
             imguiImages.push_back(
                 ImGui::ImGuiImage::Create(
                     tex,
-                    static_cast<ImGuiApplication *>(mApp.get())->GetImGuiTextureSampler()));
+                    static_cast<ImGuiApplication *>(mApp.Get())->GetImGuiTextureSampler()));
         }
 
         co_return imguiImages;
@@ -147,7 +148,7 @@ private:
     std::vector<std::future<std::vector<ImGui::ImGuiImage>>> mLoadingFutures;
 
     void InitMyTexture() {
-        auto &mNvrhiDevice = mApp.get()->GetNvrhiDevice();
+        auto &mNvrhiDevice = mApp.Get()->GetNvrhiDevice();
 
         auto color = Engine::Color::MyPink;
         uint8_t r = static_cast<uint8_t>(color.r * 255.0f);
@@ -167,7 +168,7 @@ private:
                 ),
             },
             mNvrhiDevice,
-            mApp.get()->GetCommandList()
+            mApp.Get()->GetCommandList()
         );
 
         mMyTexture = std::move(pinkTexture);

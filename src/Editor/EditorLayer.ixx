@@ -9,13 +9,14 @@ import Core.Utilities;
 import Render.FontResource;
 import Render.TextRenderer;
 import Render.Transform;
+import Core.Utilities;
 
 namespace Editor {
     export class EditorLayer : public Engine::Layer {
     public:
         EditorLayer() = default;
 
-        void OnAttach(const std::shared_ptr<Frosty::Application> &app) override {
+        void OnAttach(const Engine::Ref<Frosty::Application> &app) override {
             Layer::OnAttach(app);
 
             mSceneViewport.Init(mApp->GetNvrhiDevice());
@@ -24,7 +25,7 @@ namespace Editor {
             Engine::Ref<Engine::VirtualSizeTransform> virtualSizeTransform =
                 Engine::Ref<Engine::VirtualSizeTransform>::Create();
             virtualSizeTransform->SetVirtualWidth(1920.f);
-            desc.Transforms = std::vector<Engine::Ref<Engine::ITransform>>{
+            desc.Transforms = std::vector<Engine::Ref<Engine::RefTransform>>{
                 virtualSizeTransform
             };
             mRenderer = Engine::MakeRef<Engine::Renderer2D>(desc, mApp->GetNvrhiDevice());

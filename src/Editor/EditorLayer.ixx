@@ -16,22 +16,7 @@ namespace Editor {
     public:
         EditorLayer() = default;
 
-        void OnAttach(const Engine::Ref<Frosty::Application> &app) override {
-            Layer::OnAttach(app);
-
-            mSceneViewport.Init(mApp->GetNvrhiDevice());
-            Engine::Renderer2DDescriptor desc{};
-            desc.OutputSize = {1920, 1080};
-            Engine::Ref<Engine::VirtualSizeTransform> virtualSizeTransform =
-                Engine::Ref<Engine::VirtualSizeTransform>::Create();
-            virtualSizeTransform->SetVirtualWidth(1920.f);
-            desc.Transforms = std::vector<Engine::Ref<Engine::RefTransform>>{
-                virtualSizeTransform
-            };
-            mRenderer = Engine::MakeRef<Engine::Renderer2D>(desc, mApp->GetNvrhiDevice());
-
-            InitializeFontAsync();
-        }
+        void OnAttach(const Engine::Ref<Frosty::Application> &app) override;
 
         virtual ~EditorLayer() override = default;
 

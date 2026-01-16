@@ -17,6 +17,7 @@ import Editor.EditorLayer;
 namespace
 Engine {
     int Main(int argc, char **argv) {
+
         auto app = Engine::MakeRef<ImGuiApplication>();
         app->Init({
             .Title = "Frosty Engine App",

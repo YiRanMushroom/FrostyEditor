@@ -20,7 +20,7 @@ namespace Editor {
         Engine::Ref<Engine::VirtualSizeTransform> virtualSizeTransform =
                 Engine::Ref<Engine::VirtualSizeTransform>::Create();
         virtualSizeTransform->SetVirtualWidth(1920.f);
-        desc.Transforms = std::vector<Engine::Ref<Engine::RefTransform>>{
+        desc.Transforms = std::vector<Engine::Ref<Engine::ITransform>>{
             virtualSizeTransform
         };
         mRenderer = Engine::MakeRef<Engine::Renderer2D>(desc, mApp->GetNvrhiDevice());

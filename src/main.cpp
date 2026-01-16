@@ -16,20 +16,22 @@ import Editor.EditorLayer;
 
 namespace
 Engine {
-    int Main(int argc, char **argv) {
+    int Main(int argc, char **argv) { {
+            auto app = Engine::MakeRef<ImGuiApplication>();
+            app->Init({
+                .Title = "Frosty Engine App",
+                .Width = 1920,
+                .Height = 1080,
+            });
+            // app->EmplaceLayer<RendererDevelopmentLayer>();
+            app->EmplaceLayer<Editor::EditorLayer>();
+            app->EmplaceLayer<ImGuiDebugTestLayer>();
+            app->Run();
+            app->DetachAllLayers();
+            app->Destroy();
+        }
 
-        auto app = Engine::MakeRef<ImGuiApplication>();
-        app->Init({
-            .Title = "Frosty Engine App",
-            .Width = 1920,
-            .Height = 1080,
-        });
-        // app->EmplaceLayer<RendererDevelopmentLayer>();
-        app->EmplaceLayer<Editor::EditorLayer>();
-        app->EmplaceLayer<ImGuiDebugTestLayer>();
-        app->Run();
-        app->DetachAllLayers();
-        app->Destroy();
+        // std::println("Remaining Allocation: {}", Engine::RefCounted::sTotalAllocations.load());
         return 0;
     }
 }

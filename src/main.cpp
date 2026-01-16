@@ -25,7 +25,7 @@ Engine {
             .Width = 1920,
             .Height = 1080,
         });
-        app->EmplaceLayer<RendererDevelopmentLayer>();
+        // app->EmplaceLayer<RendererDevelopmentLayer>();
         app->EmplaceLayer<Editor::EditorLayer>();
         app->EmplaceLayer<ImGuiDebugTestLayer>();
         app->Run();

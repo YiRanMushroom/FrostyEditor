@@ -28,7 +28,7 @@ namespace Editor {
 
                 ImGui::Begin(title, open,
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar |
-                             ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoDocking);
+                             ImGuiWindowFlags_NoScrollWithMouse);
 
                 mExpectedSize = ImGui::GetContentRegionAvail();
 

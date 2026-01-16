@@ -31,7 +31,7 @@ Engine {
             app->Destroy();
         }
 
-        // std::println("Remaining Allocation: {}", Engine::RefCounted::sTotalAllocations.load());
+        std::println("Remaining Allocation: {}", Engine::RefCounted::sTotalAllocations.load());
         return 0;
     }
 }

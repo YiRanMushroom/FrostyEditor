@@ -68,7 +68,7 @@ namespace Editor {
             Engine::DrawSimpleTextAsciiCommand drawTextCmd{};
             drawTextCmd
                     .SetColor(glm::u8vec4(255, 255, 255, 255))
-                    .SetFontContext(mFontData.get())
+                    .SetFontContext(mFontData.Get())
                     .SetVirtualFontTextureId(virtualFontTextureID)
                     .SetFontSize(128)
                     .SetStartPosition({-400.f, -200.f})
@@ -99,7 +99,7 @@ namespace Editor {
         mFontInitializer.Reset();
         mSceneViewport = {};
         mRenderer.Reset();
-        mFontData.reset();
+        mFontData.Reset();
         mFontTexture.Reset();
 
         Layer::OnDetach();
@@ -140,7 +140,7 @@ namespace Editor {
                     {msdf_atlas::Charset::ASCII}
                 });
 
-                mFontData = GenerateFontAtlas(atlasInfo);
+                mFontData = Engine::MakeRef<Engine::FontAtlasData>(GenerateFontAtlas(atlasInfo));
 
                 Engine::GPUImageDescriptor imageDesc{};
                 imageDesc.width = mFontData->AtlasWidth;

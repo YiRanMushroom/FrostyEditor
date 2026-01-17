@@ -33,7 +33,7 @@ namespace Editor {
         void InitializeFontAsync();
 
         Engine::Initializer mFontInitializer;
-        std::shared_ptr<Engine::FontAtlasData> mFontData;
+        Engine::Ref<Engine::FontAtlasData> mFontData;
         nvrhi::TextureHandle mFontTexture;
         Engine::Ref<ImGuiDockSpace> mDockSpace;
     };

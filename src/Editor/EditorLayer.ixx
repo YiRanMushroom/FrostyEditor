@@ -35,5 +35,6 @@ namespace Editor {
         Engine::Initializer mFontInitializer;
         std::shared_ptr<Engine::FontAtlasData> mFontData;
         nvrhi::TextureHandle mFontTexture;
+        Engine::Ref<ImGuiDockSpace> mDockSpace;
     };
 }

@@ -10,6 +10,8 @@ import Core.FileSystem;
 import Render.FontResource;
 import Render.Image;
 
+import Render.Color;
+
 namespace Editor {
     void EditorLayer::OnAttach(const Frosty::Ref<Frosty::Application> &app) {
         Layer::OnAttach(app);
@@ -33,23 +35,48 @@ namespace Editor {
 
         dockSpace->EmplaceContent([weak = WeakFromThis<EditorLayer>()] {
             if (auto self = weak.Lock()) {
-                ImGui::BeginMenuBar();
+                ImGui::BeginMainMenuBar();
 
                 if (ImGui::BeginMenu("View")) {
                     ImGui::MenuItem("Scene Viewport", nullptr, &self->mShowSceneViewport);
                     ImGui::EndMenu();
                 }
 
-                ImGui::EndMenuBar();
+                ImGui::EndMainMenuBar();
             }
         });
+
+        mDockSpace = dockSpace;
     }
 
     void EditorLayer::OnUpdate(std::chrono::duration<float> deltaTime) {
         Layer::OnUpdate(deltaTime);
 
-        mRenderer->BeginRendering();
+        mDockSpace->RenderDockSpace();
 
+        nvrhi::Color myBlueColor = Engine::Color::MyBlue;
+
+        mRenderer->BeginRendering(
+            {
+                .ClearColor = myBlueColor
+            }
+        );
+
+        if (mFontInitializer) {
+            uint32_t virtualFontTextureID = mRenderer->RegisterVirtualTextureForThisFrame(mFontTexture);
+
+            Engine::DrawSimpleTextAsciiCommand drawTextCmd{};
+            drawTextCmd
+                    .SetColor(glm::u8vec4(255, 255, 255, 255))
+                    .SetFontContext(mFontData.get())
+                    .SetVirtualFontTextureId(virtualFontTextureID)
+                    .SetFontSize(128)
+                    .SetStartPosition({-400.f, -200.f})
+                    .SetEndPosition({400.f, 200.f})
+                    .SetText("Hello from Frosty Editor!");
+
+            mRenderer->Draw(drawTextCmd);
+        }
         mRenderer->DrawTriangleColored(
             glm::mat3x2(0.f, -100.f, -50.f, 0.f, 50.f, 0.f), // show face upward
             glm::u8vec4(255, 0, 0, 255)

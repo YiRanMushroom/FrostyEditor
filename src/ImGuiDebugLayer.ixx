@@ -34,6 +34,10 @@ public:
             mLoadingFutures.push_back(OpenDialogAndLoadImagesAsync().IntoFuture());
         }
 
+        if (ImGui::Button("Log Save Directory")) {
+            mLoggingFutures.push_back(LogSaveDirectoryAsync().IntoFuture());
+        }
+
         ImGui::End();
 
         OnFrameEnded([this] {
@@ -53,6 +57,17 @@ public:
                     for (auto &img: images) {
                         mLoadedImages.emplace_back(std::move(img), true);
                     }
+                    return true;
+                }
+                return false;
+            }
+        );
+
+        std::erase_if(
+            mLoggingFutures,
+            [](std::future<void> &future) {
+                if (future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                    future.get();
                     return true;
                 }
                 return false;
@@ -109,8 +124,8 @@ public:
         //     {.name = "All Files", .pattern = "*"}
         // };
 
-        Ref<IDialogFileFilterGroup> filters = MakeRef<DialogFileFilterGroup>(
-            std::initializer_list<DialogFileFilterPatternElement>{
+        static std::array<SDL_DialogFileFilter, 3> staticFileFilterGroup = {
+            {
                 {
                     .name = "PNG Images",
                     .pattern = "png"
@@ -123,7 +138,11 @@ public:
                     .name = "All Files",
                     .pattern = "*"
                 }
-            }, ResourceOwnership::Transferred{});
+            }
+        };
+
+        Ref<IDialogFileFilterGroup> filters = MakeRef<DialogFileFilterGroup>(
+            staticFileFilterGroup, ResourceOwnership::Static{});
 
         auto paths = co_await OpenFileDialogAsync(
             mApp->GetWindow().get(),
@@ -156,12 +175,33 @@ public:
         co_return imguiImages;
     }
 
+    Engine::Awaitable<void> LogSaveDirectoryAsync() const {
+        Engine::AwaitLetSelf letSelf{
+            [](Engine::PromiseBase& promise) {
+                promise.NotCancellable = true;
+            }
+        };
+
+        // Not cancellable, filters are static respect to the async function
+
+        std::vector<SDL_DialogFileFilter> filters = {
+            {.name = "All Files", .pattern = "*"}
+        };
+
+        auto filterSpan = MakeRef<DialogFileFilterGroup>(filters, ResourceOwnership::Static{});
+
+        std::optional<std::filesystem::path> saveFilePath = co_await Engine::SaveFileDialogAsync(mApp->GetWindow().get(), filterSpan);
+
+        std::println("Selected save file: {0}", saveFilePath.has_value() ? saveFilePath->string() : "None");
+    }
+
 private:
     nvrhi::TextureHandle mMyTexture;
     ImGui::ImGuiImage mImGuiTexture;
 
     std::vector<std::pair<ImGui::ImGuiImage, bool>> mLoadedImages;
     std::vector<std::future<std::vector<ImGui::ImGuiImage>>> mLoadingFutures;
+    std::vector<std::future<void>> mLoggingFutures;
 
     void InitMyTexture() {
         auto &mNvrhiDevice = mApp.Get()->GetNvrhiDevice();
@@ -184,7 +224,7 @@ private:
                 ),
             },
             mNvrhiDevice,
-            mApp.Get()->GetCommandList()
+            mApp->GetNvrhiDevice()->createCommandList()
         );
 
         mMyTexture = std::move(pinkTexture);

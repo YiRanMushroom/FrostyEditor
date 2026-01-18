@@ -115,7 +115,7 @@ namespace Editor {
                     }
                 )> ftLib(msdfgen::initializeFreetype());
 
-                const auto &executablePath = Engine::GetExecutablePath();
+                const auto &executablePath = Engine::GetThisExecutablePath();
 
                 // load font from fonts/JetBrainsMono-Regular.ttf
 

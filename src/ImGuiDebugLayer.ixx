@@ -103,11 +103,27 @@ public:
                   const nvrhi::FramebufferHandle &framebuffer, uint32_t) override {}
 
     Engine::Awaitable<std::vector<ImGui::ImGuiImage>> OpenDialogAndLoadImagesAsync() {
-        SDL_DialogFileFilter filters[] = {
-            {.name = "PNG Images", .pattern = "png"},
-            {.name = "JPEG Images", .pattern = "jpg;jpeg"},
-            {.name = "All Files", .pattern = "*"}
-        };
+        // SDL_DialogFileFilter filters[] = {
+        //     {.name = "PNG Images", .pattern = "png"},
+        //     {.name = "JPEG Images", .pattern = "jpg;jpeg"},
+        //     {.name = "All Files", .pattern = "*"}
+        // };
+
+        Ref<IDialogFileFilterGroup> filters = MakeRef<DialogFileFilterGroup>(
+            std::initializer_list<DialogFileFilterPatternElement>{
+                {
+                    .name = "PNG Images",
+                    .pattern = "png"
+                },
+                {
+                    .name = "JPEG Images",
+                    .pattern = "jpg;jpeg"
+                },
+                {
+                    .name = "All Files",
+                    .pattern = "*"
+                }
+            }, ResourceOwnership::Transferred{});
 
         auto paths = co_await OpenFileDialogAsync(
             mApp->GetWindow().get(),
@@ -130,7 +146,7 @@ public:
             commandList);
 
         std::vector<ImGui::ImGuiImage> imguiImages;
-        for (const auto &tex : gpuImages) {
+        for (const auto &tex: gpuImages) {
             imguiImages.push_back(
                 ImGui::ImGuiImage::Create(
                     tex,

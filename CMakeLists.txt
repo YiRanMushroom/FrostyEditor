@@ -42,12 +42,14 @@ target_compile_definitions(
         FrostyCore
         PUBLIC
         "FrostyDefineMain=1"
+        "GLM_FORCE_DEPTH_ZERO_TO_ONE"
 )
 
 target_compile_definitions(
         ${PROJECT_NAME}
         PUBLIC
         "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1"
+        "GLM_FORCE_DEPTH_ZERO_TO_ONE"
 )
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

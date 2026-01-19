@@ -36,5 +36,7 @@ namespace Editor {
         Engine::Ref<Engine::FontAtlasData> mFontData;
         nvrhi::TextureHandle mFontTexture;
         Engine::Ref<ImGuiDockSpace> mDockSpace;
+
+        float mRotationAngle{0.0f};
     };
 }

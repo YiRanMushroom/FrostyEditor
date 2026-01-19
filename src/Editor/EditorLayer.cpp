@@ -12,6 +12,8 @@ import Render.Image;
 
 import Render.Color;
 
+import <glm/gtx/transform.hpp>;
+
 namespace Editor {
     void EditorLayer::OnAttach(const Frosty::Ref<Frosty::Application> &app) {
         Layer::OnAttach(app);
@@ -65,6 +67,10 @@ namespace Editor {
         if (mFontInitializer) {
             uint32_t virtualFontTextureID = mRenderer->RegisterVirtualTextureForThisFrame(mFontTexture);
 
+            ImGui::Begin("Rotate angle (Y-axis)");
+            ImGui::SliderFloat("Angle", &mRotationAngle, 0.0f, 360.0f);
+            ImGui::End();
+
             Engine::DrawSimpleTextAsciiCommand drawTextCmd{};
             drawTextCmd
                     .SetColor(glm::u8vec4(255, 255, 255, 255))
@@ -74,6 +80,9 @@ namespace Editor {
                     .SetStartPosition({-400.f, -200.f})
                     .SetEndPosition({400.f, 200.f})
                     .SetText("Hello from Frosty Editor!");
+
+            // also set Transform, it is a mat4x4
+            drawTextCmd.SetTransform(glm::rotate(glm::radians(mRotationAngle), glm::vec3(0.f, 1.f, 0.f)));
 
             mRenderer->Draw(drawTextCmd);
         }

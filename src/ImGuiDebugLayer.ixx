@@ -14,7 +14,10 @@ import Core.FileSystem;
 import Core.Coroutine;
 import Core.Utilities;
 
+
 using namespace Engine;
+
+
 
 export class ImGuiDebugTestLayer : public Layer {
 public:
@@ -118,12 +121,6 @@ public:
                   const nvrhi::FramebufferHandle &framebuffer, uint32_t) override {}
 
     Engine::Awaitable<std::vector<ImGui::ImGuiImage>> OpenDialogAndLoadImagesAsync() {
-        // SDL_DialogFileFilter filters[] = {
-        //     {.name = "PNG Images", .pattern = "png"},
-        //     {.name = "JPEG Images", .pattern = "jpg;jpeg"},
-        //     {.name = "All Files", .pattern = "*"}
-        // };
-
         static std::array<SDL_DialogFileFilter, 3> staticFileFilterGroup = {
             {
                 {
@@ -177,7 +174,7 @@ public:
 
     Engine::Awaitable<void> LogSaveDirectoryAsync() const {
         Engine::AwaitLetSelf letSelf{
-            [](Engine::PromiseBase& promise) {
+            [](Engine::PromiseBase &promise) {
                 promise.NotCancellable = true;
             }
         };
@@ -190,7 +187,8 @@ public:
 
         auto filterSpan = MakeRef<DialogFileFilterGroup>(filters, ResourceOwnership::Static{});
 
-        std::optional<std::filesystem::path> saveFilePath = co_await Engine::SaveFileDialogAsync(mApp->GetWindow().get(), filterSpan);
+        std::optional<std::filesystem::path> saveFilePath = co_await Engine::SaveFileDialogAsync(
+            mApp->GetWindow().get(), filterSpan);
 
         std::println("Selected save file: {0}", saveFilePath.has_value() ? saveFilePath->string() : "None");
     }

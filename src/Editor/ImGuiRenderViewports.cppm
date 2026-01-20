@@ -19,7 +19,9 @@ namespace Editor {
                    mViewportTexture.GetTextureDesc().height != mExpectedSize.y;
         }
 
-        void ShowViewport(bool *open, const char *title = "ImGui Viewport") {
+        bool ShowViewport(bool *open, const char *title = "ImGui Viewport") {
+            bool focused = false;
+
             if (*open) {
                 ImGui::SetNextWindowSizeConstraints({150.f, 150.f},
                                                     {
@@ -37,8 +39,12 @@ namespace Editor {
                     ImGui::ImageAutoManaged(mViewportTexture, ImGui::GetContentRegionAvail());
                 }
 
+                focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+
                 ImGui::End();
             }
+
+            return focused;
         }
 
         [[nodiscard]] const ImVec2 &GetExpectedViewportSize() const {

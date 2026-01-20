@@ -21,11 +21,15 @@ namespace Editor {
         mSceneViewport.Init(mApp->GetNvrhiDevice());
         Engine::Renderer2DDescriptor desc{};
         desc.OutputSize = {1920, 1080};
-        Engine::Ref<Engine::VirtualSizeTransform> virtualSizeTransform =
-                Engine::Ref<Engine::VirtualSizeTransform>::Create();
-        virtualSizeTransform->SetVirtualWidth(1920.f);
-        desc.Transforms = std::vector<Engine::Ref<Engine::ITransform>>{
-            virtualSizeTransform
+        // Engine::Ref<Engine::VirtualSizeTransform> virtualSizeTransform =
+        //         Engine::Ref<Engine::VirtualSizeTransform>::Create();
+        // virtualSizeTransform->SetVirtualWidth(1920.f);
+        // desc.Transforms = std::vector<Engine::Ref<Engine::ITransform>>{
+        //     virtualSizeTransform
+        // };
+        mCamera = Engine::MakeRef<PerspectiveCamera>();
+        desc.Transforms = std::vector{
+            mCamera.As<Engine::ITransform>()
         };
         mRenderer = Engine::MakeRef<Engine::Renderer2D>(desc, mApp->GetNvrhiDevice());
 
@@ -53,6 +57,9 @@ namespace Editor {
 
     void EditorLayer::OnUpdate(std::chrono::duration<float> deltaTime) {
         Layer::OnUpdate(deltaTime);
+
+        if (mFocusedOnViewport)
+            mCamera->OnUpdate(deltaTime);
 
         mDockSpace->RenderDockSpace();
 
@@ -93,7 +100,7 @@ namespace Editor {
 
         mRenderer->EndRendering();
 
-        mSceneViewport.ShowViewport(&mShowSceneViewport, "Scene Viewport");
+        mFocusedOnViewport = mSceneViewport.ShowViewport(&mShowSceneViewport, "Scene Viewport");
 
         if (mSceneViewport.NeedsResize()) {
             auto size = mSceneViewport.GetExpectedViewportSize();
@@ -112,6 +119,10 @@ namespace Editor {
         mFontTexture.Reset();
 
         Layer::OnDetach();
+    }
+
+    bool EditorLayer::OnEvent(const Frosty::Event &event) {
+        return Layer::OnEvent(event) || !mFocusedOnViewport || mCamera->OnEvent(event);
     }
 
     void EditorLayer::InitializeFontAsync() {

@@ -21,102 +21,98 @@ import "glm/gtx/transform.hpp";
 namespace Editor {
     export class PerspectiveCamera : public Engine::ITransform, public Engine::RefCounted {
     public:
-        void OnFramebufferResized(float newWidth, float newHeight) override;
-
-        void DoTransform(glm::mat4 &matrix) override;
-
-        void OnUpdate(std::chrono::duration<float> deltaTime);
-
-        bool OnEvent(const Engine::Event &event);
-
-    private:
-        float mFOV = 90.f;
-        float mNearPlane = 0.1f;
-        float mFarPlane = 1000.f;
-        glm::vec3 mPosition{0.f, 0.f, 100.f};
-        glm::vec3 mTarget{0.f, 0.f, 0.f};
-        glm::vec3 mUp{0.f, 1.f, 0.f};
-
-        glm::mat4 mProjectionMatrix{};
-        glm::mat4 mViewMatrix{};
-
-        bool mMatricesDirty = true;
-
-        float mAspectRatio{};
-    };
-
-    void PerspectiveCamera::OnFramebufferResized(float newWidth, float newHeight) {
-        mAspectRatio = newWidth / newHeight;
-        mMatricesDirty = true;
-    }
-
-    void PerspectiveCamera::OnUpdate(std::chrono::duration<float> deltaTime) {
-        const float cameraSpeed = 5.0f; // units per second
-        glm::vec3 forward = glm::normalize(mTarget - mPosition);
-        glm::vec3 right = glm::normalize(glm::cross(forward, mUp));
-
-        if (Engine::IsKeyPressed(SDL_SCANCODE_W)) {
-            mPosition += forward * cameraSpeed * deltaTime.count();
-            mTarget += forward * cameraSpeed * deltaTime.count();
+        void OnFramebufferResized(float newWidth, float newHeight) override {
+            mAspectRatio = newWidth / newHeight;
             mMatricesDirty = true;
         }
-        if (Engine::IsKeyPressed(SDL_SCANCODE_S)) {
-            mPosition -= forward * cameraSpeed * deltaTime.count();
-            mTarget -= forward * cameraSpeed * deltaTime.count();
-            mMatricesDirty = true;
+
+        void OnUpdate(std::chrono::duration<float> deltaTime) {
+            const float moveSpeed = 500.0f;
+            float dt = deltaTime.count();
+
+            glm::vec3 forward = glm::normalize(mFocalPoint - mPosition);
+            glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0)));
+            glm::vec3 up = glm::cross(right, forward);
+
+            bool moved = false;
+            if (Engine::IsKeyPressed(SDL_SCANCODE_W)) {
+                mFocalPoint += forward * moveSpeed * dt;
+                moved = true;
+            }
+            if (Engine::IsKeyPressed(SDL_SCANCODE_S)) {
+                mFocalPoint -= forward * moveSpeed * dt;
+                moved = true;
+            }
+            if (Engine::IsKeyPressed(SDL_SCANCODE_A)) {
+                mFocalPoint -= right * moveSpeed * dt;
+                moved = true;
+            }
+            if (Engine::IsKeyPressed(SDL_SCANCODE_D)) {
+                mFocalPoint += right * moveSpeed * dt;
+                moved = true;
+            }
+
+            if (moved) mMatricesDirty = true;
         }
-        if (Engine::IsKeyPressed(SDL_SCANCODE_A)) {
-            mPosition -= right * cameraSpeed * deltaTime.count();
-            mTarget -= right * cameraSpeed * deltaTime.count();
-            mMatricesDirty = true;
-        }
-        if (Engine::IsKeyPressed(SDL_SCANCODE_D)) {
-            mPosition += right * cameraSpeed * deltaTime.count();
-            mTarget += right * cameraSpeed * deltaTime.count();
-            mMatricesDirty = true;
-        }
-    }
 
-    bool PerspectiveCamera::OnEvent(const Engine::Event &event) {
-        if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-            const auto &wheelEvent = event.wheel;
-            float fovChange = -static_cast<float>(wheelEvent.y) * 5.0f; // Zoom speed
-            mFOV += fovChange;
-            mFOV = glm::clamp(mFOV, 30.0f, 120.0f); // Clamp FOV between 30 and 120 degrees
-            mMatricesDirty = true;
-            return true;
-        }
-
-        if (event.type == SDL_EVENT_MOUSE_MOTION) {
-            const auto &motionEvent = event.motion;
-            if (Engine::IsMouseButtonPressed(SDL_BUTTON_RIGHT)) {
-                float sensitivity = 0.1f; // Mouse sensitivity
-                float yaw = motionEvent.xrel * sensitivity;
-                float pitch = motionEvent.yrel * sensitivity;
-
-                glm::vec3 direction = mTarget - mPosition;
-                glm::vec3 right = glm::normalize(glm::cross(direction, mUp));
-                glm::vec3 up = glm::normalize(glm::cross(right, direction));
-
-                // Rotate around the up vector (yaw)
-                glm::mat4 yawRotation = glm::rotate(glm::radians(-yaw), mUp);
-                direction = glm::vec3(yawRotation * glm::vec4(direction, 0.0f));
-
-                // Rotate around the right vector (pitch)
-                glm::mat4 pitchRotation = glm::rotate(glm::radians(-pitch), right);
-                direction = glm::vec3(pitchRotation * glm::vec4(direction, 0.0f));
-
-                mTarget = mPosition + direction;
+        bool OnEvent(const Engine::Event& event) {
+            if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+                float delta = event.wheel.y;
+                mDistance -= delta * (mDistance * 0.1f);
+                mDistance = std::max(0.1f, mDistance);
+                UpdatePositionFromOrbit();
                 mMatricesDirty = true;
                 return true;
             }
+
+            if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                float dx = event.motion.xrel * 0.2f;
+                float dy = event.motion.yrel * 0.2f;
+
+                if (Engine::IsMouseButtonPressed(SDL_BUTTON_MIDDLE)) {
+                    float panSpeed = mDistance * 0.0015f;
+                    glm::vec3 offset = GetRightVector() * (-dx * panSpeed) + GetUpVector() * (dy * panSpeed);
+                    mPosition += offset;
+                    mFocalPoint += offset;
+                    mMatricesDirty = true;
+                }
+                else if (Engine::IsMouseButtonPressed(SDL_BUTTON_RIGHT)) {
+                    mYaw -= dx;
+                    mPitch += dy;
+                    mPitch = std::clamp(mPitch, -89.0f, 89.0f);
+                    UpdatePositionFromOrbit();
+                    mMatricesDirty = true;
+                }
+                else if (Engine::IsMouseButtonPressed(SDL_BUTTON_LEFT)) {
+                    mYaw -= dx;
+                    mPitch += dy;
+                    mPitch = std::clamp(mPitch, -89.0f, 89.0f);
+                    UpdateFocalPointFromSelfRotate();
+                    mMatricesDirty = true;
+                }
+                return true;
+            }
+            return false;
         }
 
-        return false;
-    }
+        void DoTransform(glm::mat4 &matrix) override {
+            if (mMatricesDirty) {
+                UpdateCameraMatrices();
+                mMatricesDirty = false;
+            }
+            matrix = mProjectionMatrix * mViewMatrix * matrix;
+        }
 
-    void PerspectiveCamera::DoTransform(glm::mat4 &matrix) {
-        if (mMatricesDirty) {
+    private:
+        void UpdateCameraMatrices() {
+            float x = mDistance * cos(glm::radians(mPitch)) * sin(glm::radians(mYaw));
+            float y = mDistance * sin(glm::radians(mPitch));
+            float z = mDistance * cos(glm::radians(mPitch)) * cos(glm::radians(mYaw));
+
+            mPosition = mFocalPoint + glm::vec3(x, y, z);
+
+            mViewMatrix = glm::lookAt(mPosition, mFocalPoint, glm::vec3(0, 1, 0));
+
             mProjectionMatrix = glm::perspective(
                 glm::radians(mFOV),
                 mAspectRatio,
@@ -124,17 +120,41 @@ namespace Editor {
                 mFarPlane
             );
 
-            mViewMatrix = glm::lookAt(
-                mPosition,
-                mTarget,
-                mUp
-            );
-
-            mMatricesDirty = false;
+        }
+        glm::vec3 GetDirectionFromAngles() {
+            float x = cos(glm::radians(mPitch)) * sin(glm::radians(mYaw));
+            float y = sin(glm::radians(mPitch));
+            float z = cos(glm::radians(mPitch)) * cos(glm::radians(mYaw));
+            return glm::vec3(x, y, z);
         }
 
-        matrix = mProjectionMatrix * mViewMatrix * matrix;
-    }
+        void UpdatePositionFromOrbit() {
+            mPosition = mFocalPoint + GetDirectionFromAngles() * mDistance;
+        }
+
+        void UpdateFocalPointFromSelfRotate() {
+            mFocalPoint = mPosition - GetDirectionFromAngles() * mDistance;
+        }
+
+        glm::vec3 GetForwardVector() { return glm::normalize(mFocalPoint - mPosition); }
+        glm::vec3 GetRightVector()   { return glm::normalize(glm::cross(GetForwardVector(), glm::vec3(0, 1, 0))); }
+        glm::vec3 GetUpVector()      { return glm::cross(GetRightVector(), GetForwardVector()); }
+
+        float mFOV = 60.f;
+        float mNearPlane = 0.1f;
+        float mFarPlane = 5000.f;
+        float mAspectRatio = 1.77f;
+
+        glm::vec3 mFocalPoint{0.f, 0.f, 0.f};
+        float mDistance = 500.f;
+        float mYaw = 0.f;
+        float mPitch = 20.f;
+
+        glm::vec3 mPosition{};
+        glm::mat4 mProjectionMatrix{1.f};
+        glm::mat4 mViewMatrix{1.f};
+        bool mMatricesDirty = true;
+    };
 }
 
 namespace Editor {

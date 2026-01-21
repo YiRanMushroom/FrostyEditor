@@ -48,6 +48,44 @@ namespace Editor {
             return focused;
         }
 
+        bool ShowViewport(bool *open, const char *title, std::function<void()> customContent) {
+            bool focused = false;
+
+            if (*open) {
+                ImGui::SetNextWindowSizeConstraints({150.f, 150.f},
+                                                    {
+                                                        std::numeric_limits<float>::max(),
+                                                        std::numeric_limits<float>::max()
+                                                    });
+
+                ImGui::Begin(title, open,
+                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar |
+                             ImGuiWindowFlags_NoScrollWithMouse);
+
+                mExpectedSize = ImGui::GetContentRegionAvail();
+                mCursorPosition = ImGui::GetCursorScreenPos();
+
+                if (mViewportTexture) {
+                    ImGui::ImageAutoManaged(mViewportTexture, ImGui::GetContentRegionAvail());
+                }
+
+                if (customContent) {
+                    customContent();
+                }
+
+                focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+                mWindowHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
+
+                ImGui::End();
+            }
+
+            return focused;
+        }
+
+        bool IsWindowHovered() const {
+            return mWindowHovered;
+        }
+
         [[nodiscard]] const ImVec2 &GetExpectedViewportSize() const {
             return mExpectedSize;
         }
@@ -67,9 +105,14 @@ namespace Editor {
             };
         }
 
+        ImVec2 GetCursorPosition() const {
+            return mCursorPosition;
+        }
+
     private:
         ImVec2 mExpectedSize{0.0f, 0.0f};
         ImVec2 mCursorPosition{0.0f, 0.0f};
+        bool mWindowHovered{false};
         nvrhi::DeviceHandle mDevice;
         ImGui::ImGuiImage mViewportTexture;
     };

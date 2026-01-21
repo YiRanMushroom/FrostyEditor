@@ -17,6 +17,7 @@ import Core.Events;
 import Render.Transform;
 import "SDL3/SDL.h";
 import "glm/gtx/transform.hpp";
+import Vendor.ImGuizmo;
 
 namespace Editor {
     export class PerspectiveCamera : public Engine::ITransform, public Engine::RefCounted {
@@ -69,6 +70,10 @@ namespace Editor {
                 float dx = event.motion.xrel * 0.2f;
                 float dy = event.motion.yrel * 0.2f;
 
+                // Check if SHIFT key is pressed - if so, don't process camera movement
+                // SHIFT is reserved for selection operations
+                bool shiftPressed = Engine::GetKeyModifiers() & SDL_KMOD_SHIFT;
+
                 if (Engine::IsMouseButtonPressed(SDL_BUTTON_MIDDLE)) {
                     float panSpeed = mDistance * 0.0015f;
                     glm::vec3 offset = GetRightVector() * (-dx * panSpeed) + GetUpVector() * (-dy * panSpeed);
@@ -83,7 +88,8 @@ namespace Editor {
                     UpdatePositionFromOrbit();
                     mMatricesDirty = true;
                 }
-                else if (Engine::IsMouseButtonPressed(SDL_BUTTON_LEFT)) {
+                else if (Engine::IsMouseButtonPressed(SDL_BUTTON_LEFT) && !shiftPressed) {
+                    // Only process left button if SHIFT is NOT pressed
                     mYaw -= dx;
                     mPitch -= dy;
                     mPitch = std::clamp(mPitch, -89.0f, 89.0f);
@@ -102,6 +108,9 @@ namespace Editor {
             }
             matrix = mProjectionMatrix * mViewMatrix * matrix;
         }
+
+        glm::mat4 mProjectionMatrix{1.f};
+        glm::mat4 mViewMatrix{1.f};
 
     private:
         void UpdateCameraMatrices() {
@@ -151,8 +160,6 @@ namespace Editor {
         float mPitch = 20.f;
 
         glm::vec3 mPosition{};
-        glm::mat4 mProjectionMatrix{1.f};
-        glm::mat4 mViewMatrix{1.f};
         bool mMatricesDirty = true;
     };
 }
@@ -195,5 +202,26 @@ namespace Editor {
         bool mFocusedOnViewport{false};
 
         ImVec2 mLastClickedTextureOffset{0.0f, 0.0f};
+
+        Engine::Ref<Engine::ITransform> mActiveTransform;
+
+        std::unordered_map<uint32_t, Engine::Ref<Engine::ITransform>> mEntityTransforms;
+
+        // ImGuizmo state
+        ImGuizmo::OPERATION mCurrentGizmoOperation{ImGuizmo::TRANSLATE};
+        ImGuizmo::MODE mCurrentGizmoMode{ImGuizmo::WORLD};
+        bool mUseSnap{false};
+        float mSnapTranslation[3] = {1.f, 1.f, 1.f};
+        float mSnapRotation = 15.f;
+        float mSnapScale = 0.1f;
+
+        // For detecting if transform actually changed to avoid accumulating errors
+        glm::mat4 mPreviousTransform{1.0f};
+        bool mTransformChanged{false};
+
+
+        void RenderImGuizmo(std::chrono::duration<float> deltaTime);
+
+        void RenderImGuizmoInViewport();
     };
 }

@@ -13,9 +13,39 @@ import Render.Image;
 import Render.Color;
 
 import <glm/gtx/transform.hpp>;
+import <glm/gtc/type_ptr.hpp>;
 import "SDL3/SDL_keycode.h";
+import Vendor.ImGuizmo;
 
 namespace Editor {
+    class SimpleTransform : public Engine::ITransform, public Engine::RefCounted {
+    public:
+        SimpleTransform() = default;
+
+        glm::mat4 &GetMatrix() {
+            return mMatrix;
+        }
+
+        const glm::mat4 &GetMatrix() const {
+            return mMatrix;
+        }
+
+        void SetMatrix(const glm::mat4 &matrix) {
+            mMatrix = matrix;
+        }
+
+        void OnFramebufferResized(float newWidth, float newHeight) {
+            // No action needed for this simple transform
+        }
+
+        void DoTransform(glm::mat4 &matrix) override {
+            matrix = mMatrix * matrix;
+        }
+
+    private:
+        glm::mat4 mMatrix{1.0f};
+    };
+
     void EditorLayer::OnAttach(const Frosty::Ref<Frosty::Application> &app) {
         Layer::OnAttach(app);
 
@@ -52,12 +82,18 @@ namespace Editor {
         });
 
         mDockSpace = dockSpace;
+
+        // Register entity transforms
+        // Entity ID 1 is the triangle
+        mEntityTransforms.insert({1, Engine::MakeRef<SimpleTransform>()});
     }
 
     void EditorLayer::OnUpdate(std::chrono::duration<float> deltaTime) {
         Layer::OnUpdate(deltaTime);
 
-        if (mFocusedOnViewport)
+        // Only update camera if viewport is focused AND ImGuizmo is not being used
+        // Check ImGuizmo state directly here (this is from previous frame's rendering)
+        if (mFocusedOnViewport && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
             mCamera->OnUpdate(deltaTime);
 
         mDockSpace->RenderDockSpace();
@@ -69,6 +105,26 @@ namespace Editor {
                 .ClearColor = myBlueColor
             }
         );
+
+        Engine::TriangleDrawCommand triangleCmd{};
+        triangleCmd
+                .SetPositions(
+                    glm::vec2(0.f, -100.f),
+                    glm::vec2(-50.f, 0.f),
+                    glm::vec2(50.f, 0.f)
+                )
+                .SetTintColor({255, 0, 0, 255})
+                .SetEntityID(1);
+
+        // Apply transform if entity has one
+        if (mEntityTransforms.contains(1)) {
+            auto transform = static_cast<SimpleTransform *>(mEntityTransforms[1].Get());
+            if (transform) {
+                triangleCmd.SetTransform(transform->GetMatrix());
+            }
+        }
+
+        mRenderer->Draw(triangleCmd);
 
         if (mFontInitializer) {
             uint32_t virtualFontTextureID = mRenderer->RegisterVirtualTextureForThisFrame(mFontTexture);
@@ -86,21 +142,19 @@ namespace Editor {
                     .SetStartPosition({-400.f, -200.f})
                     .SetEndPosition({400.f, 200.f})
                     .SetText("Hello from Frosty Editor!")
-                    .SetEntityID(1);
+                    .SetEntityID(2);
 
             // also set Transform, it is a mat4x4
             drawTextCmd.SetTransform(glm::rotate(glm::radians(mRotationAngle), glm::vec3(0.f, 1.f, 0.f)));
 
             mRenderer->Draw(drawTextCmd);
         }
-        mRenderer->DrawTriangleColored(
-            glm::mat3x2(0.f, -100.f, -50.f, 0.f, 50.f, 0.f), // show face upward
-            glm::u8vec4(255, 0, 0, 255)
-        );
 
         mRenderer->EndRendering();
 
-        mFocusedOnViewport = mSceneViewport.ShowViewport(&mShowSceneViewport, "Scene Viewport");
+        mFocusedOnViewport = mSceneViewport.ShowViewport(&mShowSceneViewport, "Scene Viewport", [this] {
+            RenderImGuizmoInViewport();
+        });
 
         mLastClickedTextureOffset = mSceneViewport.GetLastClickedTextureOffset();
 
@@ -111,6 +165,8 @@ namespace Editor {
                 mSceneViewport.SetViewportTexture(mRenderer->GetTexture());
             }
         }
+
+        RenderImGuizmo(deltaTime);
     }
 
     void EditorLayer::OnDetach() {
@@ -124,11 +180,64 @@ namespace Editor {
     }
 
     bool EditorLayer::OnEvent(const Engine::Event &event) {
-        return Layer::OnEvent(event) || !mFocusedOnViewport || HandleMouseSelect(event) || mCamera->OnEvent(event);
+        // Handle mouse button down events specially
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            bool isShiftClick = Engine::GetKeyModifiers() & SDL_KMOD_SHIFT;
+
+            // Check if viewport window is hovered (more reliable than mFocusedOnViewport which updates in OnUpdate)
+            bool isClickInViewport = mSceneViewport.IsWindowHovered();
+
+            // Debug: Print ImGuizmo state
+            std::cout << std::format("BUTTON_DOWN: IsUsing={}, IsOver={}, mFocusedOnViewport={}, isClickInViewport={}, isShift={}\n",
+                ImGuizmo::IsUsing(), ImGuizmo::IsOver(), mFocusedOnViewport, isClickInViewport, isShiftClick);
+
+            // SHIFT+click for selection (use hover state, not focus state)
+            if (isShiftClick && isClickInViewport) {
+                return HandleMouseSelect(event);
+            }
+
+            // Normal click - check if should deselect
+            // Only deselect if clicking in viewport AND not clicking on/using ImGuizmo
+            if (isClickInViewport) {
+                // Use IsUsing() to check if ImGuizmo is currently being manipulated
+                // This catches the case where user just finished dragging
+                if (!ImGuizmo::IsUsing() && !ImGuizmo::IsOver()) {
+                    std::cout << "Deselecting active transform\n";
+                    mActiveTransform.Reset();
+                } else {
+                    std::cout << "NOT deselecting - ImGuizmo active\n";
+                }
+            }
+
+            return Layer::OnEvent(event);
+        }
+
+        // For motion and wheel events
+        // Check if ImGuizmo is active - if so, don't pass to camera
+        if (ImGuizmo::IsUsing() || ImGuizmo::IsOver()) {
+            return Layer::OnEvent(event);
+        }
+
+        // Only pass events to camera if viewport is focused
+        if (mFocusedOnViewport) {
+            return Layer::OnEvent(event) || mCamera->OnEvent(event);
+        }
+
+        return Layer::OnEvent(event);
     }
 
     bool EditorLayer::HandleMouseSelect(const Engine::Event &event) {
-        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && (Engine::GetKeyModifiers() & SDL_KMOD_LALT)) {
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            // Check if clicking on ImGuizmo at this moment
+            // ImGuizmo::IsOver() tells us if mouse is over gizmo widgets
+            if (ImGuizmo::IsOver()) {
+                // User is SHIFT+clicking on ImGuizmo - don't do entity picking
+                // This preserves the current selection
+                std::cout << "SHIFT+click on ImGuizmo detected, preserving selection\n";
+                return true; // Consume event
+            }
+
+            // Not clicking on ImGuizmo, safe to do entity picking
             std::cout << std::format("Clicked at texture offset: ({}, {})\n",
                                      mLastClickedTextureOffset.x,
                                      mLastClickedTextureOffset.y);
@@ -141,11 +250,17 @@ namespace Editor {
                 )
             ).IntoFuture().get();
 
-            std::cout << std::format("Picked Entity ID: {}\n", entityID);
-            std::cout.flush();
+            if (entityID != 0 && mEntityTransforms.contains(entityID)) {
+                mActiveTransform = mEntityTransforms[entityID];
+                std::cout << "Selected entity ID: " << entityID << "\n";
+            } else {
+                mActiveTransform.Reset();
+                std::cout << "No entity selected.\n";
+            }
 
             return true;
         }
+
 
         return false;
     }
@@ -199,5 +314,178 @@ namespace Editor {
                 mFontTexture = Engine::UploadImageToGPU(imageDesc, Device, commandList);
             }
         };
+    }
+
+    void EditorLayer::RenderImGuizmo(std::chrono::duration<float> deltaTime) {
+        if (!mActiveTransform) {
+            return;
+        }
+
+        // Keyboard shortcuts for switching gizmo operation
+        // Only when viewport is focused and no text input is being edited
+        if (mFocusedOnViewport && !ImGui::GetIO().WantTextInput) {
+            if (ImGui::IsKeyPressed(ImGuiKey_R)) {
+                // Cycle through operation modes: Translate -> Rotate -> Scale -> Translate
+                if (mCurrentGizmoOperation == ImGuizmo::TRANSLATE) {
+                    mCurrentGizmoOperation = ImGuizmo::ROTATE;
+                } else if (mCurrentGizmoOperation == ImGuizmo::ROTATE) {
+                    mCurrentGizmoOperation = ImGuizmo::SCALE;
+                } else {
+                    mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+                }
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_T)) {
+                mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_E)) {
+                mCurrentGizmoOperation = ImGuizmo::SCALE;
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_S)) {
+                mUseSnap = !mUseSnap;
+            }
+        }
+
+        // Show gizmo control window
+        ImGui::Begin("Transform Controls");
+
+        if (ImGui::RadioButton("Translate", mCurrentGizmoOperation == ImGuizmo::TRANSLATE)) {
+            mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Rotate", mCurrentGizmoOperation == ImGuizmo::ROTATE)) {
+            mCurrentGizmoOperation = ImGuizmo::ROTATE;
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Scale", mCurrentGizmoOperation == ImGuizmo::SCALE)) {
+            mCurrentGizmoOperation = ImGuizmo::SCALE;
+        }
+
+        // Get the active transform matrix
+        auto simpleTransform = static_cast<SimpleTransform *>(mActiveTransform.Get());
+        if (!simpleTransform) {
+            ImGui::End();
+            return;
+        }
+
+        glm::mat4 &matrix = simpleTransform->GetMatrix();
+
+        // Decompose matrix for manual editing
+        float matrixTranslation[3], matrixRotation[3], matrixScale[3];
+        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(matrix), matrixTranslation, matrixRotation, matrixScale);
+
+        ImGui::InputFloat3("Translation", matrixTranslation);
+        ImGui::InputFloat3("Rotation", matrixRotation);
+        ImGui::InputFloat3("Scale", matrixScale);
+
+        // Only recompose if values changed
+        glm::mat4 newMatrix;
+        ImGuizmo::RecomposeMatrixFromComponents(matrixTranslation, matrixRotation, matrixScale,
+                                                glm::value_ptr(newMatrix));
+        if (newMatrix != matrix) {
+            matrix = newMatrix;
+        }
+
+        // Mode selection (not available for scale)
+        if (mCurrentGizmoOperation != ImGuizmo::SCALE) {
+            if (ImGui::RadioButton("Local", mCurrentGizmoMode == ImGuizmo::LOCAL)) {
+                mCurrentGizmoMode = ImGuizmo::LOCAL;
+            }
+            ImGui::SameLine();
+            if (ImGui::RadioButton("World", mCurrentGizmoMode == ImGuizmo::WORLD)) {
+                mCurrentGizmoMode = ImGuizmo::WORLD;
+            }
+        }
+
+        // Snap settings
+        ImGui::Checkbox("Use Snap", &mUseSnap);
+        ImGui::SameLine();
+
+        switch (mCurrentGizmoOperation) {
+            case ImGuizmo::TRANSLATE:
+                ImGui::InputFloat3("Snap", mSnapTranslation);
+                break;
+            case ImGuizmo::ROTATE:
+                ImGui::InputFloat("Angle Snap", &mSnapRotation);
+                break;
+            case ImGuizmo::SCALE:
+                ImGui::InputFloat("Scale Snap", &mSnapScale);
+                break;
+            default:
+                break;
+        }
+
+        ImGui::Text("Shortcuts: T=Translate, R=Rotate, E=Scale, S=Toggle Snap");
+
+        ImGui::End();
+    }
+
+    void EditorLayer::RenderImGuizmoInViewport() {
+        if (!mActiveTransform || !mCamera) {
+            return;
+        }
+
+        auto simpleTransform = static_cast<SimpleTransform *>(mActiveTransform.Get());
+        if (!simpleTransform) {
+            return;
+        }
+
+        // Get camera matrices
+        glm::mat4 view = mCamera->mViewMatrix;
+        glm::mat4 projection = mCamera->mProjectionMatrix;
+
+        // Flip Y-axis for ImGuizmo to match Vulkan coordinate system
+        glm::mat4 projectionForImGuizmo = projection;
+        projectionForImGuizmo[1][1] *= -1.0f;
+
+        // Get the object matrix
+        glm::mat4 &matrix = simpleTransform->GetMatrix();
+
+        // Store previous matrix to detect changes
+        mPreviousTransform = matrix;
+
+        // Set ImGuizmo to render on top of the viewport image
+        ImGuizmo::SetDrawlist();
+
+        // Get the viewport's screen position and size
+        // The viewport texture was rendered, so we need to get its position
+        ImVec2 viewportPos = mSceneViewport.GetCursorPosition();
+        ImVec2 viewportSize = mSceneViewport.GetExpectedViewportSize();
+
+        ImGuizmo::SetRect(viewportPos.x, viewportPos.y, viewportSize.x, viewportSize.y);
+
+        // Determine snap value based on operation
+        float *snapValues = nullptr;
+        float snapRotationArray[3] = {mSnapRotation, mSnapRotation, mSnapRotation};
+        float snapScaleArray[3] = {mSnapScale, mSnapScale, mSnapScale};
+
+        if (mUseSnap) {
+            switch (mCurrentGizmoOperation) {
+                case ImGuizmo::TRANSLATE:
+                    snapValues = mSnapTranslation;
+                    break;
+                case ImGuizmo::ROTATE:
+                    snapValues = snapRotationArray;
+                    break;
+                case ImGuizmo::SCALE:
+                    snapValues = snapScaleArray;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        // Manipulate the gizmo
+        ImGuizmo::Manipulate(
+            glm::value_ptr(view),
+            glm::value_ptr(projectionForImGuizmo),
+            mCurrentGizmoOperation,
+            mCurrentGizmoMode,
+            glm::value_ptr(matrix),
+            nullptr,
+            snapValues
+        );
+
+        // Only update if the transform actually changed (to avoid accumulating errors from decompose/recompose)
+        mTransformChanged = (matrix != mPreviousTransform);
     }
 }

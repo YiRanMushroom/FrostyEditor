@@ -71,21 +71,21 @@ namespace Editor {
 
                 if (Engine::IsMouseButtonPressed(SDL_BUTTON_MIDDLE)) {
                     float panSpeed = mDistance * 0.0015f;
-                    glm::vec3 offset = GetRightVector() * (-dx * panSpeed) + GetUpVector() * (dy * panSpeed);
+                    glm::vec3 offset = GetRightVector() * (-dx * panSpeed) + GetUpVector() * (-dy * panSpeed);
                     mPosition += offset;
                     mFocalPoint += offset;
                     mMatricesDirty = true;
                 }
                 else if (Engine::IsMouseButtonPressed(SDL_BUTTON_RIGHT)) {
                     mYaw -= dx;
-                    mPitch += dy;
+                    mPitch -= dy;
                     mPitch = std::clamp(mPitch, -89.0f, 89.0f);
                     UpdatePositionFromOrbit();
                     mMatricesDirty = true;
                 }
                 else if (Engine::IsMouseButtonPressed(SDL_BUTTON_LEFT)) {
                     mYaw -= dx;
-                    mPitch += dy;
+                    mPitch -= dy;
                     mPitch = std::clamp(mPitch, -89.0f, 89.0f);
                     UpdateFocalPointFromSelfRotate();
                     mMatricesDirty = true;
@@ -170,7 +170,9 @@ namespace Editor {
 
         void OnDetach() override;
 
-        bool OnEvent(const Frosty::Event &event) override;
+        bool OnEvent(const Engine::Event &event) override;
+
+        bool HandleMouseSelect(const Engine::Event &event);
 
     private:
         bool mShowSceneViewport{true};
@@ -191,5 +193,7 @@ namespace Editor {
         float mRotationAngle{0.0f};
 
         bool mFocusedOnViewport{false};
+
+        ImVec2 mLastClickedTextureOffset{0.0f, 0.0f};
     };
 }

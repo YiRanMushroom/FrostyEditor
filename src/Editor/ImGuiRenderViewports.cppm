@@ -34,6 +34,7 @@ namespace Editor {
                              ImGuiWindowFlags_NoScrollWithMouse);
 
                 mExpectedSize = ImGui::GetContentRegionAvail();
+                mCursorPosition = ImGui::GetCursorScreenPos();
 
                 if (mViewportTexture) {
                     ImGui::ImageAutoManaged(mViewportTexture, ImGui::GetContentRegionAvail());
@@ -58,8 +59,17 @@ namespace Editor {
             );
         }
 
+        ImVec2 GetLastClickedTextureOffset() const {
+            ImVec2 mousePos = ImGui::GetMousePos();
+            return ImVec2{
+                mousePos.x - mCursorPosition.x,
+                mousePos.y - mCursorPosition.y
+            };
+        }
+
     private:
         ImVec2 mExpectedSize{0.0f, 0.0f};
+        ImVec2 mCursorPosition{0.0f, 0.0f};
         nvrhi::DeviceHandle mDevice;
         ImGui::ImGuiImage mViewportTexture;
     };

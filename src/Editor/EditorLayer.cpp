@@ -13,6 +13,7 @@ import Render.Image;
 import Render.Color;
 
 import <glm/gtx/transform.hpp>;
+import "SDL3/SDL_keycode.h";
 
 namespace Editor {
     void EditorLayer::OnAttach(const Frosty::Ref<Frosty::Application> &app) {
@@ -36,8 +37,6 @@ namespace Editor {
         InitializeFontAsync();
 
         auto dockSpace = Engine::MakeRef<ComposableImGuiDockSpace>();
-
-        // static_assert(std::same_as<decltype(WeakFromThis<EditorLayer>()), Frosty::Weak<EditorLayer>>);
 
         dockSpace->EmplaceContent([weak = WeakFromThis<EditorLayer>()] {
             if (auto self = weak.Lock()) {
@@ -86,7 +85,8 @@ namespace Editor {
                     .SetFontSize(128)
                     .SetStartPosition({-400.f, -200.f})
                     .SetEndPosition({400.f, 200.f})
-                    .SetText("Hello from Frosty Editor!");
+                    .SetText("Hello from Frosty Editor!")
+                    .SetEntityID(1);
 
             // also set Transform, it is a mat4x4
             drawTextCmd.SetTransform(glm::rotate(glm::radians(mRotationAngle), glm::vec3(0.f, 1.f, 0.f)));
@@ -101,6 +101,8 @@ namespace Editor {
         mRenderer->EndRendering();
 
         mFocusedOnViewport = mSceneViewport.ShowViewport(&mShowSceneViewport, "Scene Viewport");
+
+        mLastClickedTextureOffset = mSceneViewport.GetLastClickedTextureOffset();
 
         if (mSceneViewport.NeedsResize()) {
             auto size = mSceneViewport.GetExpectedViewportSize();
@@ -121,8 +123,31 @@ namespace Editor {
         Layer::OnDetach();
     }
 
-    bool EditorLayer::OnEvent(const Frosty::Event &event) {
-        return Layer::OnEvent(event) || !mFocusedOnViewport || mCamera->OnEvent(event);
+    bool EditorLayer::OnEvent(const Engine::Event &event) {
+        return Layer::OnEvent(event) || !mFocusedOnViewport || HandleMouseSelect(event) || mCamera->OnEvent(event);
+    }
+
+    bool EditorLayer::HandleMouseSelect(const Engine::Event &event) {
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && (Engine::GetKeyModifiers() & SDL_KMOD_LALT)) {
+            std::cout << std::format("Clicked at texture offset: ({}, {})\n",
+                                     mLastClickedTextureOffset.x,
+                                     mLastClickedTextureOffset.y);
+            std::cout.flush();
+
+            uint32_t entityID = mRenderer->GetEntityIDAtPixelPositionAsync(
+                glm::uvec2(
+                    static_cast<uint32_t>(mLastClickedTextureOffset.x),
+                    static_cast<uint32_t>(mLastClickedTextureOffset.y)
+                )
+            ).IntoFuture().get();
+
+            std::cout << std::format("Picked Entity ID: {}\n", entityID);
+            std::cout.flush();
+
+            return true;
+        }
+
+        return false;
     }
 
     void EditorLayer::InitializeFontAsync() {

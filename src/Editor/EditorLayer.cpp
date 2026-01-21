@@ -16,6 +16,7 @@ import <glm/gtx/transform.hpp>;
 import <glm/gtc/type_ptr.hpp>;
 import "SDL3/SDL_keycode.h";
 import Vendor.ImGuizmo;
+import "SDL3/SDL_mouse.h";
 
 namespace Editor {
     class SimpleTransform : public Engine::ITransform, public Engine::RefCounted {
@@ -180,33 +181,31 @@ namespace Editor {
     }
 
     bool EditorLayer::OnEvent(const Engine::Event &event) {
-        // Handle mouse button down events specially
-        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        // Handle mouse button down events (initial click only)
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
+            // This is the initial click - check SHIFT state NOW
             bool isShiftClick = Engine::GetKeyModifiers() & SDL_KMOD_SHIFT;
-
-            // Check if viewport window is hovered (more reliable than mFocusedOnViewport which updates in OnUpdate)
             bool isClickInViewport = mSceneViewport.IsWindowHovered();
 
-            // Debug: Print ImGuizmo state
-            std::cout << std::format("BUTTON_DOWN: IsUsing={}, IsOver={}, mFocusedOnViewport={}, isClickInViewport={}, isShift={}\n",
-                ImGuizmo::IsUsing(), ImGuizmo::IsOver(), mFocusedOnViewport, isClickInViewport, isShiftClick);
+            // Debug: Print state
+            std::cout << std::format("BUTTON_DOWN: IsOver={}, isClickInViewport={}, isShift={}\n",
+                ImGuizmo::IsOver(), isClickInViewport, isShiftClick);
 
-            // SHIFT+click for selection (use hover state, not focus state)
+            // SHIFT+click for selection
             if (isShiftClick && isClickInViewport) {
-                return HandleMouseSelect(event);
+                // Don't do entity picking if clicking on ImGuizmo
+                if (!ImGuizmo::IsOver()) {
+                    return HandleMouseSelect(event);
+                } else {
+                    std::cout << "SHIFT+click on ImGuizmo, preserving selection\n";
+                    return true; // Consume event
+                }
             }
 
-            // Normal click - check if should deselect
-            // Only deselect if clicking in viewport AND not clicking on/using ImGuizmo
-            if (isClickInViewport) {
-                // Use IsUsing() to check if ImGuizmo is currently being manipulated
-                // This catches the case where user just finished dragging
-                if (!ImGuizmo::IsUsing() && !ImGuizmo::IsOver()) {
-                    std::cout << "Deselecting active transform\n";
-                    mActiveTransform.Reset();
-                } else {
-                    std::cout << "NOT deselecting - ImGuizmo active\n";
-                }
+            // Normal click (no SHIFT) - check if should deselect
+            if (isClickInViewport && !ImGuizmo::IsOver()) {
+                std::cout << "Deselecting active transform\n";
+                mActiveTransform.Reset();
             }
 
             return Layer::OnEvent(event);
@@ -228,20 +227,10 @@ namespace Editor {
 
     bool EditorLayer::HandleMouseSelect(const Engine::Event &event) {
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            // Check if clicking on ImGuizmo at this moment
-            // ImGuizmo::IsOver() tells us if mouse is over gizmo widgets
-            if (ImGuizmo::IsOver()) {
-                // User is SHIFT+clicking on ImGuizmo - don't do entity picking
-                // This preserves the current selection
-                std::cout << "SHIFT+click on ImGuizmo detected, preserving selection\n";
-                return true; // Consume event
-            }
-
-            // Not clicking on ImGuizmo, safe to do entity picking
-            std::cout << std::format("Clicked at texture offset: ({}, {})\n",
+            // This function is only called when SHIFT+clicking in viewport, not on ImGuizmo
+            std::cout << std::format("Entity picking at texture offset: ({}, {})\n",
                                      mLastClickedTextureOffset.x,
                                      mLastClickedTextureOffset.y);
-            std::cout.flush();
 
             uint32_t entityID = mRenderer->GetEntityIDAtPixelPositionAsync(
                 glm::uvec2(
@@ -332,12 +321,6 @@ namespace Editor {
                 } else {
                     mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
                 }
-            }
-            if (ImGui::IsKeyPressed(ImGuiKey_T)) {
-                mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
-            }
-            if (ImGui::IsKeyPressed(ImGuiKey_E)) {
-                mCurrentGizmoOperation = ImGuizmo::SCALE;
             }
             if (ImGui::IsKeyPressed(ImGuiKey_S)) {
                 mUseSnap = !mUseSnap;

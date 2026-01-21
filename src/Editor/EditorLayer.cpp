@@ -309,9 +309,8 @@ namespace Editor {
                 imageDesc.debugName = "FontAtlasTexture";
 
                 auto Device = mApp->GetNvrhiDevice();
-                auto commandList = Device->createCommandList();
 
-                mFontTexture = Engine::UploadImageToGPU(imageDesc, Device, commandList);
+                mFontTexture = Engine::UploadImageToGPU(imageDesc, Device);
             }
         };
     }

@@ -158,8 +158,7 @@ public:
             images | std::views::transform([](const CPUImage &it) {
                 return it.GetGPUDescriptor();
             }) | std::ranges::to<std::vector<GPUImageDescriptor>>(),
-            device.Get(),
-            commandList);
+            device.Get());
 
         std::vector<ImGui::ImGuiImage> imguiImages;
         for (const auto &tex: gpuImages) {
@@ -221,8 +220,7 @@ private:
                     pixels.size() * sizeof(uint32_t)
                 ),
             },
-            mNvrhiDevice,
-            mApp->GetNvrhiDevice()->createCommandList()
+            mNvrhiDevice
         );
 
         mMyTexture = std::move(pinkTexture);

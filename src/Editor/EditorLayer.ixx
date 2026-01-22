@@ -214,6 +214,8 @@ namespace Editor {
         float mSnapRotation = 15.f;
         float mSnapScale = 0.1f;
 
+        bool mTransformResetRequested{false};
+
         // For detecting if transform actually changed to avoid accumulating errors
         glm::mat4 mPreviousTransform{1.0f};
         bool mTransformChanged{false};

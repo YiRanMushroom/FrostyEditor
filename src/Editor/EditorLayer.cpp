@@ -152,6 +152,15 @@ namespace Editor {
         mRenderer->EndRendering();
 
         mFocusedOnViewport = mSceneViewport.ShowViewport(&mShowSceneViewport, "Scene Viewport", [this] {
+            if (mTransformResetRequested) {
+
+                if (ImGui::IsWindowHovered()) {
+                    std::cout << "Resetting active transform due to click outside ImGuizmo\n";
+                    mActiveTransform.Reset();
+                }
+
+                mTransformResetRequested = false;
+            }
             RenderImGuizmoInViewport();
         });
 
@@ -199,9 +208,9 @@ namespace Editor {
             // Normal click (no SHIFT) - check if should deselect
             // Only check ImGuizmo::IsOver() when we have an active transform (gizmo is visible)
             // This prevents IsOver() from returning stale state when no gizmo is displayed
-            if (mActiveTransform && !ImGuizmo::IsOver()) {
+            if (!ImGuizmo::IsOver()) {
                 std::cout << "Deselecting active transform\n";
-                mActiveTransform.Reset();
+                mTransformResetRequested = true;
             }
 
             return Layer::OnEvent(event);

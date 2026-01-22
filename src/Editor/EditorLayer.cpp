@@ -61,7 +61,7 @@ namespace Editor {
         desc.Transforms = std::vector{
             mCamera.As<Engine::ITransform>()
         };
-        mRenderer = Engine::MakeRef<Engine::Renderer2D>(desc, mApp->GetNvrhiDevice());
+        mRenderer = Engine::MakeRef<Engine::Renderer2D>(desc, mApp->GetCommandListSubmissionContext());
 
         InitializeFontAsync();
 
@@ -299,9 +299,9 @@ namespace Editor {
                 imageDesc.imageData = mFontData->GetAtlasBitmapDataSpan();
                 imageDesc.debugName = "FontAtlasTexture";
 
-                auto Device = mApp->GetNvrhiDevice();
+                // auto Device = mApp->GetNvrhiDevice();
 
-                mFontTexture = Engine::UploadImageToGPU(imageDesc, Device);
+                mFontTexture = Engine::UploadImageToGPU(imageDesc, mApp->GetCommandListSubmissionContext());
             }
         };
     }

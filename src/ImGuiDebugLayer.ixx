@@ -17,8 +17,6 @@ import Core.Utilities;
 
 using namespace Engine;
 
-
-
 export class ImGuiDebugTestLayer : public Layer {
 public:
     void OnUpdate(std::chrono::duration<float> deltaTime) override {

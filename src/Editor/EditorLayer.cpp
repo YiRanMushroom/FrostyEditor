@@ -12,8 +12,6 @@ import Render.Image;
 
 import Render.Color;
 
-import <glm/gtx/transform.hpp>;
-import <glm/gtc/type_ptr.hpp>;
 import "SDL3/SDL_keycode.h";
 import Vendor.ImGuizmo;
 import "SDL3/SDL_mouse.h";

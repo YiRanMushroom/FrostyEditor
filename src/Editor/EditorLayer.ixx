@@ -16,7 +16,6 @@ import Core.Events;
 
 import Render.Transform;
 import "SDL3/SDL.h";
-import "glm/gtx/transform.hpp";
 import Vendor.ImGuizmo;
 
 namespace Editor {

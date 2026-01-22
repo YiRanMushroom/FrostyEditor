@@ -143,7 +143,7 @@ namespace Editor {
                     .SetStartPosition({-400.f, -200.f})
                     .SetEndPosition({400.f, 200.f})
                     .SetText("Hello from Frosty Editor!")
-                    .SetEntityID(2);
+                    .SetEntityID(0);
 
             // also set Transform, it is a mat4x4
             drawTextCmd.SetTransform(glm::rotate(glm::radians(mRotationAngle), glm::vec3(0.f, 1.f, 0.f)));
@@ -185,25 +185,23 @@ namespace Editor {
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
             // This is the initial click - check SHIFT state NOW
             bool isShiftClick = Engine::GetKeyModifiers() & SDL_KMOD_SHIFT;
-            bool isClickInViewport = mSceneViewport.IsWindowHovered();
+            // bool isClickInViewport = mSceneViewport.IsWindowHovered();
 
             // Debug: Print state
-            std::cout << std::format("BUTTON_DOWN: IsOver={}, isClickInViewport={}, isShift={}\n",
-                ImGuizmo::IsOver(), isClickInViewport, isShiftClick);
+            std::cout << std::format("BUTTON_DOWN: IsOver={},  isShift={}\n",
+                                     ImGuizmo::IsOver(), isShiftClick);
 
             // SHIFT+click for selection
-            if (isShiftClick && isClickInViewport) {
+            if (isShiftClick) {
                 // Don't do entity picking if clicking on ImGuizmo
-                if (!ImGuizmo::IsOver()) {
-                    return HandleMouseSelect(event);
-                } else {
-                    std::cout << "SHIFT+click on ImGuizmo, preserving selection\n";
-                    return true; // Consume event
-                }
+                return HandleMouseSelect(event);
             }
 
+
             // Normal click (no SHIFT) - check if should deselect
-            if (isClickInViewport && !ImGuizmo::IsOver()) {
+            // Only check ImGuizmo::IsOver() when we have an active transform (gizmo is visible)
+            // This prevents IsOver() from returning stale state when no gizmo is displayed
+            if (mActiveTransform && !ImGuizmo::IsOver()) {
                 std::cout << "Deselecting active transform\n";
                 mActiveTransform.Reset();
             }
@@ -241,10 +239,16 @@ namespace Editor {
 
             if (entityID != 0 && mEntityTransforms.contains(entityID)) {
                 mActiveTransform = mEntityTransforms[entityID];
-                std::cout << "Selected entity ID: " << entityID << "\n";
-            } else {
+                std::cout << "Selected entity ID: " << entityID << std::endl;
+            } else if (!ImGuizmo::IsOver()) {
                 mActiveTransform.Reset();
-                std::cout << "No entity selected.\n";
+                if (entityID == 0) {
+                    std::cout << "No entity at clicked position." << std::endl;
+                } else {
+                    std::cout << "Entity ID " << entityID << " has no associated transform." << std::endl;
+                }
+            } else {
+                std::cout << "Clicked on ImGuizmo, not changing selection." << std::endl;
             }
 
             return true;

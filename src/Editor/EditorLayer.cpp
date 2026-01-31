@@ -12,6 +12,8 @@ import Render.Image;
 
 import Render.Color;
 
+import Render.TextRenderer;
+
 import "SDL3/SDL_keycode.h";
 import Vendor.ImGuizmo;
 import "SDL3/SDL_mouse.h";
@@ -51,17 +53,11 @@ namespace Editor {
         mSceneViewport.Init(mApp->GetNvrhiDevice());
         Engine::Renderer2DDescriptor desc{};
         desc.OutputSize = {1920, 1080};
-        // Engine::Ref<Engine::VirtualSizeTransform> virtualSizeTransform =
-        //         Engine::Ref<Engine::VirtualSizeTransform>::Create();
-        // virtualSizeTransform->SetVirtualWidth(1920.f);
-        // desc.Transforms = std::vector<Engine::Ref<Engine::ITransform>>{
-        //     virtualSizeTransform
-        // };
         mCamera = Engine::MakeRef<PerspectiveCamera>();
         desc.Transforms = std::vector{
             mCamera.As<Engine::ITransform>()
         };
-        mRenderer = Engine::MakeRef<Engine::Renderer2D>(desc, mApp->GetCommandListSubmissionContext());
+        mRenderer = Engine::MakeRef<Engine::NVRenderer2D>(desc, mApp->GetCommandListSubmissionContext());
 
         InitializeFontAsync();
 
@@ -97,7 +93,7 @@ namespace Editor {
 
         mDockSpace->RenderDockSpace();
 
-        nvrhi::Color myBlueColor = Engine::Color::MyBlue;
+        auto myBlueColor = Engine::Color::MyBlue;
 
         mRenderer->BeginRendering(
             {
@@ -105,13 +101,12 @@ namespace Editor {
             }
         );
 
-        Engine::TriangleDrawCommand triangleCmd{};
-        triangleCmd
-                .SetPositions(
-                    glm::vec2(0.f, -100.f),
-                    glm::vec2(-50.f, 0.f),
-                    glm::vec2(50.f, 0.f)
-                )
+        auto triangleCommandEncoder = Engine::CommandEncoders::Triangle{}
+                .SetPositions({
+                    {0.f, -100.f},
+                    {-50.f, 0.f},
+                    {50.f, 0.f}
+                })
                 .SetTintColor({255, 0, 0, 255})
                 .SetEntityID(1);
 
@@ -119,11 +114,11 @@ namespace Editor {
         if (mEntityTransforms.contains(1)) {
             auto transform = static_cast<SimpleTransform *>(mEntityTransforms[1].Get());
             if (transform) {
-                triangleCmd.SetTransform(transform->GetMatrix());
+                triangleCommandEncoder.SetModelMatrix(transform->GetMatrix());
             }
         }
 
-        mRenderer->Draw(triangleCmd);
+        triangleCommandEncoder.EncodeToRenderer(*mRenderer);
 
         if (mFontInitializer) {
             uint32_t virtualFontTextureID = mRenderer->RegisterVirtualTextureForThisFrame(mFontTexture);
@@ -132,10 +127,9 @@ namespace Editor {
             ImGui::SliderFloat("Angle", &mRotationAngle, 0.0f, 360.0f);
             ImGui::End();
 
-            Engine::DrawSimpleTextAsciiCommand drawTextCmd{};
-            drawTextCmd
+            auto textDrawCommandEncoder = Engine::CommandEncoders::SimpleTextAscii{}
                     .SetColor(glm::u8vec4(255, 255, 255, 255))
-                    .SetFontContext(mFontData.Get())
+                    .SetContext(mFontData.Get())
                     .SetVirtualFontTextureId(virtualFontTextureID)
                     .SetFontSize(128)
                     .SetStartPosition({-400.f, -200.f})
@@ -144,16 +138,15 @@ namespace Editor {
                     .SetEntityID(0);
 
             // also set Transform, it is a mat4x4
-            drawTextCmd.SetTransform(glm::rotate(glm::radians(mRotationAngle), glm::vec3(0.f, 1.f, 0.f)));
+            textDrawCommandEncoder.SetModelMatrix(glm::rotate(glm::radians(mRotationAngle), glm::vec3(0.f, 1.f, 0.f)));
 
-            mRenderer->Draw(drawTextCmd);
+            textDrawCommandEncoder.EncodeToRenderer(*mRenderer);
         }
 
         mRenderer->EndRendering();
 
         mFocusedOnViewport = mSceneViewport.ShowViewport(&mShowSceneViewport, "Scene Viewport", [this] {
             if (mTransformResetRequested) {
-
                 if (ImGui::IsWindowHovered()) {
                     std::cout << "Resetting active transform due to click outside ImGuizmo\n";
                     mActiveTransform.Reset();

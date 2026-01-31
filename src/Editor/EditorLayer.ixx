@@ -187,7 +187,7 @@ namespace Editor {
 
         Engine::Ref<PerspectiveCamera> mCamera;
 
-        Engine::Ref<Engine::Renderer2D> mRenderer;
+        Engine::Ref<Engine::NVRenderer2D> mRenderer;
 
         void InitializeFontAsync();
 

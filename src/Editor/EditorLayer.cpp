@@ -54,7 +54,7 @@ namespace Editor {
         Engine::Renderer2DDescriptor desc{};
         desc.OutputSize = {1920, 1080};
         mCamera = Engine::MakeRef<PerspectiveCamera>();
-        Engine::Borrowed<Engine::ITransform> iTransform[1] = {mCamera.Borrow().Into<Engine::ITransform>()};
+        Engine::Borrowed<Engine::ITransform> iTransform[] = {mCamera.Borrow().Into<Engine::ITransform>()};
         desc.Transforms = std::span(iTransform);
         mRenderer = Engine::MakeRef<Engine::NVRenderer2D>(desc, mApp->GetCommandListSubmissionContext());
 

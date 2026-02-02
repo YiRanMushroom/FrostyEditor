@@ -52,7 +52,7 @@ public:
 
         std::erase_if(
             mLoadingFutures,
-            [this](std::future<std::vector<ImGui::ImGuiImage>> &future) {
+            [this](std::future<std::vector<Engine::Ref<ImGui::ImGuiImage>>> &future) {
                 if (future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
                     auto images = future.get();
                     for (auto &img: images) {
@@ -76,7 +76,7 @@ public:
         );
 
         for (size_t i = 0; i < mLoadedImages.size(); ++i) {
-            auto desc = mLoadedImages[i].first.GetTextureDesc();
+            auto desc = mLoadedImages[i].first->GetTextureDesc();
             ImGui::Begin(("Loaded Image " + std::to_string(i)).c_str(), &mLoadedImages[i].second);
             ImGui::Text("Dimensions: %d x %d", desc.width, desc.height);
 
@@ -118,7 +118,7 @@ public:
     void OnRender(const nvrhi::CommandListHandle &commandList,
                   const nvrhi::FramebufferHandle &framebuffer, uint32_t) override {}
 
-    Engine::Awaitable<std::vector<ImGui::ImGuiImage>> OpenDialogAndLoadImagesAsync() {
+    Engine::Awaitable<std::vector<Engine::Ref<ImGui::ImGuiImage>>> OpenDialogAndLoadImagesAsync() {
         static std::array<SDL_DialogFileFilter, 3> staticFileFilterGroup = {
             {
                 {
@@ -144,7 +144,7 @@ public:
             filters
         );
 
-        std::vector<CPUImage> images;
+        std::vector<Ref<CPUImage>> images;
         for (const auto &path: paths) {
             images.push_back(co_await LoadImageFromFileAsync(path));
         }
@@ -153,12 +153,12 @@ public:
         auto commandList = device->createCommandList();
 
         auto gpuImages = UploadImagesToGPU(
-            images | std::views::transform([](const CPUImage &it) {
-                return it.GetGPUDescriptor();
+            images | std::views::transform([](const Ref<CPUImage>& it) {
+                return it->GetGPUDescriptor();
             }) | std::ranges::to<std::vector<GPUImageDescriptor>>(),
             mApp->GetCommandListSubmissionContext());
 
-        std::vector<ImGui::ImGuiImage> imguiImages;
+        std::vector<Engine::Ref<ImGui::ImGuiImage>> imguiImages;
         for (const auto &tex: gpuImages) {
             imguiImages.push_back(
                 ImGui::ImGuiImage::Create(
@@ -192,10 +192,10 @@ public:
 
 private:
     nvrhi::TextureHandle mMyTexture;
-    ImGui::ImGuiImage mImGuiTexture;
+    Ref<ImGui::ImGuiImage> mImGuiTexture;
 
-    std::vector<std::pair<ImGui::ImGuiImage, bool>> mLoadedImages;
-    std::vector<std::future<std::vector<ImGui::ImGuiImage>>> mLoadingFutures;
+    std::vector<std::pair<Engine::Ref<ImGui::ImGuiImage>, bool>> mLoadedImages;
+    std::vector<std::future<std::vector<Engine::Ref<ImGui::ImGuiImage>>>> mLoadingFutures;
     std::vector<std::future<void>> mLoggingFutures;
 
     void InitMyTexture() {

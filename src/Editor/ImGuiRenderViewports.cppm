@@ -15,8 +15,8 @@ namespace Editor {
         }
 
         bool NeedsResize() const {
-            return !mViewportTexture || mViewportTexture.GetTextureDesc().width != mExpectedSize.x ||
-                   mViewportTexture.GetTextureDesc().height != mExpectedSize.y;
+            return !mViewportTexture || mViewportTexture->GetTextureDesc().width != mExpectedSize.x ||
+                   mViewportTexture->GetTextureDesc().height != mExpectedSize.y;
         }
 
         bool ShowViewport(bool *open, const char *title = "ImGui Viewport") {
@@ -114,7 +114,7 @@ namespace Editor {
         ImVec2 mCursorPosition{0.0f, 0.0f};
         bool mWindowHovered{false};
         nvrhi::DeviceHandle mDevice;
-        ImGui::ImGuiImage mViewportTexture;
+        Engine::Ref<ImGui::ImGuiImage> mViewportTexture;
     };
 
     export class ImGuiDockSpace : public Engine::RefCounted {

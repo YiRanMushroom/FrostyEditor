@@ -16,8 +16,6 @@ import Editor.EditorLayer;
 namespace
 Engine {
     int Main(int argc, char **argv) {
-        RefInterface<std::string> strImpl("Hello, Frosty Engine!");
-
         // Scoped
         {
             auto app = Engine::MakeRef<ImGuiApplication>();

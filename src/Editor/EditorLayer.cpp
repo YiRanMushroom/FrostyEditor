@@ -47,10 +47,10 @@ namespace Editor {
         glm::mat4 mMatrix{1.0f};
     };
 
-    void EditorLayer::OnAttach(const Frosty::Ref<Frosty::Application> &app) {
-        Layer::OnAttach(app);
+    void EditorLayer::OnAttach(const Frosty::Ref<Frosty::Application> &pApp) {
+        Layer::OnAttach(pApp);
 
-        mSceneViewport.Init(mApp->GetNvrhiDevice());
+        mSceneViewport.Init(pApp->GetNvrhiDevice());
         Engine::Renderer2DDescriptor desc{};
         desc.OutputSize = {1920, 1080};
         mCamera = Engine::MakeRef<PerspectiveCamera>();
@@ -58,7 +58,7 @@ namespace Editor {
             mCamera.Borrow()
         };
         desc.Transforms = std::span(iTransform);
-        mRenderer = Engine::MakeRef<Engine::NVRenderer2D>(desc, mApp->GetCommandListSubmissionContext());
+        mRenderer = Engine::MakeRef<Engine::NVRenderer2D>(desc, pApp->GetCommandListSubmissionContext());
 
         InitializeFontAsync();
 
@@ -82,6 +82,9 @@ namespace Editor {
         // Register entity transforms
         // Entity ID 1 is the triangle
         mEntityTransforms.insert({1, Engine::MakeRef<SimpleTransform>()});
+    }
+
+    EditorLayer::~EditorLayer() {
     }
 
     void EditorLayer::OnUpdate(std::chrono::duration<float> deltaTime) {
@@ -174,7 +177,7 @@ namespace Editor {
     }
 
     void EditorLayer::OnDetach() {
-        m_AsyncInitContext.Destroy();
+        // m_AsyncInitContext.Destroy();
         mSceneViewport = {};
         mRenderer.Reset();
         mFontData.Reset();
@@ -313,7 +316,13 @@ namespace Editor {
 
                 // auto Device = mApp->GetNvrhiDevice();
 
-                return Engine::UploadImageToGPU(imageDesc, self->mApp->GetCommandListSubmissionContext());
+                auto app = self->mApp.Lock();
+
+                if (!app) {
+                    return nullptr;
+                }
+
+                return Engine::UploadImageToGPU(imageDesc, app->GetCommandListSubmissionContext());
             }
         );
     }

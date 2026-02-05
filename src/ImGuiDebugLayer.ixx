@@ -105,7 +105,7 @@ public:
 
         InitMyTexture();
         mImGuiTexture = ImGui::ImGuiImage::Create(
-            mMyTexture, static_cast<ImGuiApplication *>(mApp.Get())->GetImGuiTextureSampler());
+            mMyTexture, static_cast<ImGuiApplication *>(mApp.GetPtrUnsafe())->GetImGuiTextureSampler());
     }
 
     void OnDetach() override {
@@ -139,8 +139,10 @@ public:
         Ref<IDialogFileFilterGroup> filters = MakeRef<DialogFileFilterGroup>(
             staticFileFilterGroup, ResourceOwnership::Static{});
 
+        auto app = mApp.Lock();
+
         auto paths = co_await OpenFileDialogAsync(
-            mApp->GetWindow().get(),
+            app->GetWindow().get(),
             filters
         );
 
@@ -149,21 +151,21 @@ public:
             images.push_back(co_await LoadImageFromFileAsync(path));
         }
 
-        auto device = mApp->GetNvrhiDevice();
+        auto device = app->GetNvrhiDevice();
         auto commandList = device->createCommandList();
 
         auto gpuImages = UploadImagesToGPU(
             images | std::views::transform([](const Ref<CPUImage>& it) {
                 return it->GetGPUDescriptor();
             }) | std::ranges::to<std::vector<GPUImageDescriptor>>(),
-            mApp->GetCommandListSubmissionContext());
+            app->GetCommandListSubmissionContext());
 
         std::vector<Engine::Ref<ImGui::ImGuiImage>> imguiImages;
         for (const auto &tex: gpuImages) {
             imguiImages.push_back(
                 ImGui::ImGuiImage::Create(
                     tex,
-                    static_cast<ImGuiApplication *>(mApp.Get())->GetImGuiTextureSampler()));
+                    static_cast<ImGuiApplication *>(app.Get())->GetImGuiTextureSampler()));
         }
 
         co_return imguiImages;
@@ -184,8 +186,10 @@ public:
 
         auto filterSpan = MakeRef<DialogFileFilterGroup>(filters, ResourceOwnership::Static{});
 
+        auto app = mApp.Lock();
+
         std::optional<std::filesystem::path> saveFilePath = co_await Engine::SaveFileDialogAsync(
-            mApp->GetWindow().get(), filterSpan);
+            app->GetWindow().get(), filterSpan);
 
         std::println("Selected save file: {0}", saveFilePath.has_value() ? saveFilePath->string() : "None");
     }
@@ -199,7 +203,7 @@ private:
     std::vector<std::future<void>> mLoggingFutures;
 
     void InitMyTexture() {
-        auto &mNvrhiDevice = mApp.Get()->GetNvrhiDevice();
+        auto &mNvrhiDevice = mApp.GetRefUnsafe().GetNvrhiDevice();
 
         auto color = Engine::Color::MyPink;
         uint8_t r = static_cast<uint8_t>(color.r * 255.0f);
@@ -218,7 +222,7 @@ private:
                     pixels.size() * sizeof(uint32_t)
                 ),
             },
-            mApp->GetCommandListSubmissionContext()
+            mApp.GetRefUnsafe().GetCommandListSubmissionContext()
         );
 
         mMyTexture = std::move(pinkTexture);

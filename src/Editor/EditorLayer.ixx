@@ -168,7 +168,7 @@ namespace Editor {
 
         void OnAttach(const Engine::Ref<Frosty::Application> &app) override;
 
-        virtual ~EditorLayer() override = default;
+        virtual ~EditorLayer() override;
 
         void OnUpdate(std::chrono::duration<float> deltaTime) override;
 
@@ -177,6 +177,7 @@ namespace Editor {
         bool OnEvent(const Engine::Event &event) override;
 
         bool HandleMouseSelect(const Engine::Event &event);
+
 
     private:
         bool mShowSceneViewport{true};

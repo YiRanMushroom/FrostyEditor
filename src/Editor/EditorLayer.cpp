@@ -85,6 +85,8 @@ namespace Editor {
     }
 
     void EditorLayer::OnUpdate(std::chrono::duration<float> deltaTime) {
+        // m_AsyncInitContext.Pull();
+
         Layer::OnUpdate(deltaTime);
 
         // Only update camera if viewport is focused AND ImGuizmo is not being used
@@ -121,7 +123,7 @@ namespace Editor {
 
         triangleCommandEncoder.EncodeToRenderer(*mRenderer);
 
-        if (mFontInitializer) {
+        if (mFontTexture) {
             uint32_t virtualFontTextureID = mRenderer->RegisterVirtualTextureForThisFrame(mFontTexture);
 
             ImGui::Begin("Rotate angle (Y-axis)");
@@ -172,7 +174,7 @@ namespace Editor {
     }
 
     void EditorLayer::OnDetach() {
-        mFontInitializer.Reset();
+        m_AsyncInitContext.Destroy();
         mSceneViewport = {};
         mRenderer.Reset();
         mFontData.Reset();
@@ -260,7 +262,8 @@ namespace Editor {
     }
 
     void EditorLayer::InitializeFontAsync() {
-        mFontInitializer = {
+        m_AsyncInitContext.EnqueueInitialization(
+            &EditorLayer::mFontTexture,
             [this] {
                 std::unique_ptr<msdfgen::FreetypeHandle, decltype([](msdfgen::FreetypeHandle *ptr) {
                         if (ptr) {
@@ -304,9 +307,9 @@ namespace Editor {
 
                 // auto Device = mApp->GetNvrhiDevice();
 
-                mFontTexture = Engine::UploadImageToGPU(imageDesc, mApp->GetCommandListSubmissionContext());
+                return Engine::UploadImageToGPU(imageDesc, mApp->GetCommandListSubmissionContext());
             }
-        };
+        );
     }
 
     void EditorLayer::RenderImGuizmo(std::chrono::duration<float> deltaTime) {

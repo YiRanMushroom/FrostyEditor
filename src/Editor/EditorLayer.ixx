@@ -55,7 +55,7 @@ namespace Editor {
             if (moved) mMatricesDirty = true;
         }
 
-        bool OnEvent(const Engine::Event& event) {
+        bool OnEvent(const Engine::Event &event) {
             if (event.type == SDL_EVENT_MOUSE_WHEEL) {
                 float delta = event.wheel.y;
                 mDistance -= delta * (mDistance * 0.1f);
@@ -79,15 +79,13 @@ namespace Editor {
                     mPosition += offset;
                     mFocalPoint += offset;
                     mMatricesDirty = true;
-                }
-                else if (Engine::IsMouseButtonPressed(SDL_BUTTON_RIGHT)) {
+                } else if (Engine::IsMouseButtonPressed(SDL_BUTTON_RIGHT)) {
                     mYaw -= dx;
                     mPitch -= dy;
                     mPitch = std::clamp(mPitch, -89.0f, 89.0f);
                     UpdatePositionFromOrbit();
                     mMatricesDirty = true;
-                }
-                else if (Engine::IsMouseButtonPressed(SDL_BUTTON_LEFT) && !shiftPressed) {
+                } else if (Engine::IsMouseButtonPressed(SDL_BUTTON_LEFT) && !shiftPressed) {
                     // Only process left button if SHIFT is NOT pressed
                     mYaw -= dx;
                     mPitch -= dy;
@@ -127,8 +125,8 @@ namespace Editor {
                 mNearPlane,
                 mFarPlane
             );
-
         }
+
         glm::vec3 GetDirectionFromAngles() {
             float x = cos(glm::radians(mPitch)) * sin(glm::radians(mYaw));
             float y = sin(glm::radians(mPitch));
@@ -145,8 +143,8 @@ namespace Editor {
         }
 
         glm::vec3 GetForwardVector() { return glm::normalize(mFocalPoint - mPosition); }
-        glm::vec3 GetRightVector()   { return glm::normalize(glm::cross(GetForwardVector(), glm::vec3(0, 1, 0))); }
-        glm::vec3 GetUpVector()      { return glm::cross(GetRightVector(), GetForwardVector()); }
+        glm::vec3 GetRightVector() { return glm::normalize(glm::cross(GetForwardVector(), glm::vec3(0, 1, 0))); }
+        glm::vec3 GetUpVector() { return glm::cross(GetRightVector(), GetForwardVector()); }
 
         float mFOV = 60.f;
         float mNearPlane = 0.1f;
@@ -166,7 +164,7 @@ namespace Editor {
 namespace Editor {
     export class EditorLayer : public Engine::Layer {
     public:
-        EditorLayer() = default;
+        EditorLayer() : Layer{}, m_AsyncInitContext(this) {}
 
         void OnAttach(const Engine::Ref<Frosty::Application> &app) override;
 
@@ -191,7 +189,8 @@ namespace Editor {
 
         void InitializeFontAsync();
 
-        Engine::Initializer mFontInitializer;
+        Engine::AsyncInitializationContext m_AsyncInitContext;
+
         Engine::Ref<Engine::FontAtlasData> mFontData;
         nvrhi::TextureHandle mFontTexture;
         Engine::Ref<ImGuiDockSpace> mDockSpace;
@@ -219,7 +218,6 @@ namespace Editor {
         // For detecting if transform actually changed to avoid accumulating errors
         glm::mat4 mPreviousTransform{1.0f};
         bool mTransformChanged{false};
-
 
         void RenderImGuizmo(std::chrono::duration<float> deltaTime);
 

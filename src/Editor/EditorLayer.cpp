@@ -264,7 +264,7 @@ namespace Editor {
     void EditorLayer::InitializeFontAsync() {
         m_AsyncInitContext.EnqueueInitialization(
             &EditorLayer::mFontTexture,
-            [this] {
+            [weak = WeakFromThis()] -> nvrhi::TextureHandle {
                 std::unique_ptr<msdfgen::FreetypeHandle, decltype([](msdfgen::FreetypeHandle *ptr) {
                         if (ptr) {
                             msdfgen::deinitializeFreetype(ptr);
@@ -297,17 +297,23 @@ namespace Editor {
                     {msdf_atlas::Charset::ASCII}
                 });
 
-                mFontData = Engine::MakeRef<Engine::FontAtlasData>(GenerateFontAtlas(atlasInfo));
+                auto self = weak.Lock();
+
+                if (!self) {
+                    return nullptr;
+                }
+
+                self->mFontData = Engine::MakeRef<Engine::FontAtlasData>(GenerateFontAtlas(atlasInfo));
 
                 Engine::GPUImageDescriptor imageDesc{};
-                imageDesc.width = mFontData->AtlasWidth;
-                imageDesc.height = mFontData->AtlasHeight;
-                imageDesc.imageData = mFontData->GetAtlasBitmapDataSpan();
+                imageDesc.width = self->mFontData->AtlasWidth;
+                imageDesc.height = self->mFontData->AtlasHeight;
+                imageDesc.imageData = self->mFontData->GetAtlasBitmapDataSpan();
                 imageDesc.debugName = "FontAtlasTexture";
 
                 // auto Device = mApp->GetNvrhiDevice();
 
-                return Engine::UploadImageToGPU(imageDesc, mApp->GetCommandListSubmissionContext());
+                return Engine::UploadImageToGPU(imageDesc, self->mApp->GetCommandListSubmissionContext());
             }
         );
     }
